@@ -137,6 +137,19 @@ impl AuthService {
         }
     }
 
+    pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {
+        let email = normalize_email(email)?;
+        let user = sqlx::query_as::<_, User>(
+            "SELECT id, email, name, password_hash, email_verified_at, created_at
+             FROM users WHERE email = ?",
+        )
+        .bind(email)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(user)
+    }
+
     pub async fn signup(
         &self,
         email: &str,
@@ -387,13 +400,13 @@ fn verify_password(password: &str, hash: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn random_token() -> String {
+pub(crate) fn random_token() -> String {
     let mut bytes = [0_u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
 
-fn hash_token(token: &str) -> String {
+pub(crate) fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 

@@ -7,11 +7,12 @@ book-one CLI todo app and turns it into a real service: accounts, workspaces,
 sharing, recurrence, reminders, an API, a CLI sync client, email, webhooks,
 real-time updates, and production operations.
 
-Status: **chapter 3 scaffolded** — health endpoint, config, structured errors,
+Status: **chapter 4 scaffolded** — health endpoint, config, structured errors,
 `cadence serve`, migrations, SQLite task storage, accounts, Argon2 passwords,
-opaque sessions, email-verification and password-reset tokens, graceful
-shutdown, tracing, and CI. See [PLAN.md](PLAN.md) for the full product,
-architecture, book outline, coverage, milestones, and risks.
+opaque sessions, email-verification and password-reset tokens, workspaces,
+projects, roles, invitations, graceful shutdown, tracing, and CI. See
+[PLAN.md](PLAN.md) for the full product, architecture, book outline, coverage,
+milestones, and risks.
 
 ## Run it
 

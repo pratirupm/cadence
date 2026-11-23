@@ -5,6 +5,7 @@ pub mod db;
 pub mod error;
 pub mod tasks;
 pub mod telemetry;
+pub mod workspaces;
 
 use axum::Json;
 use axum::Router;
