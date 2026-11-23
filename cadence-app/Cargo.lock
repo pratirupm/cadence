@@ -298,6 +298,7 @@ dependencies = [
  "chrono-tz",
  "clap",
  "hex",
+ "hmac",
  "http-body-util",
  "rand 0.9.5",
  "reqwest",

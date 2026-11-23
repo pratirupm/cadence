@@ -80,6 +80,12 @@ struct SyncQuery {
     limit: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateWebhookRequest {
+    url: String,
+    events: Vec<String>,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/v1/me", get(me))
@@ -88,6 +94,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks",
             get(list_tasks).post(create_task),
+        )
+        .route(
+            "/api/v1/workspaces/{workspace_id}/webhooks",
+            get(list_webhooks).post(create_webhook),
         )
 }
 
@@ -139,6 +149,51 @@ async fn events(
     });
 
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+async fn list_webhooks(
+    State(state): State<AppState>,
+    user: ApiUser,
+    Path(workspace_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    user.require(Scope::Admin)?;
+    let webhooks = state.webhooks.list(&user.user_id, &workspace_id).await?;
+    let items: Vec<Value> = webhooks
+        .into_iter()
+        .map(|webhook| {
+            json!({
+                "id": webhook.id,
+                "url": webhook.url,
+                "events": webhook.events.split(',').collect::<Vec<_>>(),
+                "active": webhook.active,
+            })
+        })
+        .collect();
+
+    Ok(Json(Value::Array(items)))
+}
+
+async fn create_webhook(
+    State(state): State<AppState>,
+    user: ApiUser,
+    Path(workspace_id): Path<String>,
+    Json(body): Json<CreateWebhookRequest>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    user.require(Scope::Admin)?;
+    let webhook = state
+        .webhooks
+        .create(&user.user_id, &workspace_id, &body.url, &body.events)
+        .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "id": webhook.id,
+            "url": webhook.url,
+            "secret": webhook.secret,
+            "events": webhook.events.split(',').collect::<Vec<_>>(),
+        })),
+    ))
 }
 
 async fn push_sync(
@@ -204,6 +259,12 @@ async fn create_task(
         workspace_id: task.workspace_id.clone(),
         task: Some(task.clone()),
     });
+    if let Ok(payload) = serde_json::to_string(&task) {
+        let _ = state
+            .webhooks
+            .dispatch(&task.workspace_id, "task.created", &payload)
+            .await;
+    }
     let body = serde_json::to_string(&task).map_err(|_| AppError::Internal)?;
 
     if let Some(key) = key {

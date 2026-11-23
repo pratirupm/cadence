@@ -17,6 +17,7 @@ pub mod tasks;
 pub mod telemetry;
 pub mod tokens;
 pub mod web;
+pub mod webhooks;
 pub mod workspaces;
 
 use axum::Json;
@@ -31,6 +32,7 @@ use crate::error::AppError;
 use crate::events::EventBus;
 use crate::tasks::TaskService;
 use crate::tokens::TokenService;
+use crate::webhooks::WebhookService;
 use crate::workspaces::WorkspaceService;
 
 #[derive(Clone)]
@@ -40,6 +42,7 @@ pub struct AppState {
     pub workspaces: WorkspaceService,
     pub tasks: TaskService,
     pub tokens: TokenService,
+    pub webhooks: WebhookService,
     pub events: EventBus,
 }
 
@@ -50,6 +53,7 @@ impl AppState {
             workspaces: WorkspaceService::new(pool.clone()),
             tasks: TaskService::new(pool.clone()),
             tokens: TokenService::new(pool.clone()),
+            webhooks: WebhookService::new(pool.clone()),
             events: EventBus::new(256),
             pool,
         }

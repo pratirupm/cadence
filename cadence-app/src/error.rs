@@ -8,6 +8,7 @@ use crate::auth::AuthError;
 use crate::idempotency::IdempotencyError;
 use crate::sync::SyncError;
 use crate::tasks::TaskError;
+use crate::webhooks::WebhookError;
 use crate::workspaces::WorkspaceError;
 
 /// Errors that can become an HTTP response.
@@ -33,6 +34,8 @@ pub enum AppError {
     Idempotency(#[from] IdempotencyError),
     #[error(transparent)]
     Sync(#[from] SyncError),
+    #[error(transparent)]
+    Webhook(#[from] WebhookError),
 }
 
 #[derive(Debug, Serialize)]
@@ -107,6 +110,16 @@ impl AppError {
                 TaskError::NotFound => (StatusCode::NOT_FOUND, "task not found"),
                 TaskError::Conflict => (StatusCode::CONFLICT, "task changed since it was loaded"),
                 _ => (StatusCode::BAD_REQUEST, "sync error"),
+            },
+            Self::Webhook(error) => match error {
+                WebhookError::InvalidUrl => (StatusCode::BAD_REQUEST, "invalid webhook URL"),
+                WebhookError::NotFound => (StatusCode::NOT_FOUND, "webhook not found"),
+                WebhookError::Workspace(WorkspaceError::Forbidden) => {
+                    (StatusCode::FORBIDDEN, "forbidden")
+                }
+                WebhookError::Workspace(_) | WebhookError::Database(_) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+                }
             },
         }
     }

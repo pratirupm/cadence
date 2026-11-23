@@ -3,8 +3,9 @@ use std::process::ExitCode;
 use cadence::auth::AuthService;
 use cadence::cli::{Cli, Command, TokenCommand, UserCommand};
 use cadence::config::Config;
-use cadence::reminders::{ReminderService, run_forever};
+use cadence::reminders::{ReminderService, run_forever as reminder_worker};
 use cadence::tokens::{Scope, TokenService};
+use cadence::webhooks::{WebhookService, run_forever as webhook_worker};
 use cadence::{AppState, app, db, telemetry};
 use chrono::Utc;
 use clap::Parser;
@@ -48,11 +49,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             db::migrate(&pool).await?;
 
             if once {
-                let count = ReminderService::new(pool).run_once(Utc::now(), 50).await?;
-                println!("sent {count} reminder(s)");
+                let count = ReminderService::new(pool.clone())
+                    .run_once(Utc::now(), 50)
+                    .await?;
+                let deliveries = WebhookService::new(pool)
+                    .deliver_due(Utc::now(), 50)
+                    .await?;
+                println!("sent {count} reminder(s) and {deliveries} webhook(s)");
             } else {
                 tokio::select! {
-                    result = run_forever(pool) => result?,
+                    result = reminder_worker(pool.clone()) => result?,
+                    result = webhook_worker(pool) => result?,
                     () = shutdown_signal() => {},
                 }
             }

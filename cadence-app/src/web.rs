@@ -348,6 +348,7 @@ async fn create_task(
         workspace_id: task.workspace_id.clone(),
         task: Some(task.clone()),
     });
+    dispatch_webhook(&state, "task.created", &task).await;
 
     Ok(Redirect::to(&format!(
         "/app?workspace={}&project={}",
@@ -372,8 +373,9 @@ async fn toggle_task(
     state.events.publish(AppEvent {
         kind: "task.updated".to_owned(),
         workspace_id: task.workspace_id.clone(),
-        task: Some(task),
+        task: Some(task.clone()),
     });
+    dispatch_webhook(&state, "task.updated", &task).await;
 
     Ok(Redirect::to(&format!(
         "/app?workspace={}&project={}",
@@ -396,8 +398,9 @@ async fn delete_task(
     state.events.publish(AppEvent {
         kind: "task.deleted".to_owned(),
         workspace_id: task.workspace_id.clone(),
-        task: Some(task),
+        task: Some(task.clone()),
     });
+    dispatch_webhook(&state, "task.deleted", &task).await;
 
     Ok(Redirect::to(&format!(
         "/app?workspace={}&project={}",
@@ -444,6 +447,19 @@ async fn styles() -> impl IntoResponse {
         [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
         include_str!("../static/app.css"),
     )
+}
+
+async fn dispatch_webhook(state: &AppState, kind: &str, task: &Task) {
+    let Ok(payload) = serde_json::to_string(task) else {
+        return;
+    };
+    if let Err(error) = state
+        .webhooks
+        .dispatch(&task.workspace_id, kind, &payload)
+        .await
+    {
+        tracing::warn!(%error, "could not queue webhook delivery");
+    }
 }
 
 fn render<T: Template>(template: T) -> Result<Response, AppError> {
