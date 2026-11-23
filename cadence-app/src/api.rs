@@ -1,11 +1,17 @@
+use std::collections::HashSet;
+use std::convert::Infallible;
+
 use axum::Json;
 use axum::Router;
 use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header, request::Parts};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio_stream::StreamExt;
+use tokio_stream::wrappers::BroadcastStream;
 
 use crate::AppState;
 use crate::auth::hash_token;
@@ -78,6 +84,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/v1/me", get(me))
         .route("/api/v1/sync", get(sync).post(push_sync))
+        .route("/api/v1/events", get(events))
         .route(
             "/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks",
             get(list_tasks).post(create_task),
@@ -106,6 +113,32 @@ async fn sync(
         .await?;
 
     Ok(Json(page))
+}
+
+async fn events(
+    State(state): State<AppState>,
+    user: ApiUser,
+) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>, AppError> {
+    user.require(Scope::Read)?;
+    let allowed: HashSet<String> = state
+        .workspaces
+        .list_workspaces(&user.user_id)
+        .await?
+        .into_iter()
+        .map(|workspace| workspace.id)
+        .collect();
+    let receiver = state.events.subscribe();
+
+    let stream = BroadcastStream::new(receiver).filter_map(move |message| {
+        let event = message.ok()?;
+        if !allowed.contains(&event.workspace_id) {
+            return None;
+        }
+        let data = serde_json::to_string(&event).ok()?;
+        Some(Ok(Event::default().event(event.kind).data(data)))
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 async fn push_sync(
@@ -166,6 +199,11 @@ async fn create_task(
         .tasks
         .create(&user.user_id, &workspace_id, &project_id, &body.title)
         .await?;
+    state.events.publish(crate::events::AppEvent {
+        kind: "task.created".to_owned(),
+        workspace_id: task.workspace_id.clone(),
+        task: Some(task.clone()),
+    });
     let body = serde_json::to_string(&task).map_err(|_| AppError::Internal)?;
 
     if let Some(key) = key {

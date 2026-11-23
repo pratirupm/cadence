@@ -5,6 +5,7 @@ pub mod cli;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod events;
 pub mod idempotency;
 pub mod mailer;
 pub mod notifications;
@@ -27,6 +28,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::auth::AuthService;
 use crate::error::AppError;
+use crate::events::EventBus;
 use crate::tasks::TaskService;
 use crate::tokens::TokenService;
 use crate::workspaces::WorkspaceService;
@@ -38,6 +40,7 @@ pub struct AppState {
     pub workspaces: WorkspaceService,
     pub tasks: TaskService,
     pub tokens: TokenService,
+    pub events: EventBus,
 }
 
 impl AppState {
@@ -47,6 +50,7 @@ impl AppState {
             workspaces: WorkspaceService::new(pool.clone()),
             tasks: TaskService::new(pool.clone()),
             tokens: TokenService::new(pool.clone()),
+            events: EventBus::new(256),
             pool,
         }
     }

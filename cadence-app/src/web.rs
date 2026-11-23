@@ -1,14 +1,21 @@
+use std::collections::HashSet;
+use std::convert::Infallible;
+
 use askama::Template;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, header};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Form, Router};
 use serde::Deserialize;
+use tokio_stream::StreamExt;
+use tokio_stream::wrappers::BroadcastStream;
 
 use crate::AppState;
 use crate::auth::{AuthError, AuthSession, AuthenticatedUser};
 use crate::error::AppError;
+use crate::events::AppEvent;
 use crate::tasks::Task;
 
 const SESSION_COOKIE: &str = "cadence_session";
@@ -131,7 +138,9 @@ pub fn router() -> Router<AppState> {
         .route("/tasks", post(create_task))
         .route("/tasks/{id}/toggle", post(toggle_task))
         .route("/tasks/{id}/delete", post(delete_task))
+        .route("/events", get(events))
         .route("/static/app.css", get(styles))
+        .route("/static/live.js", get(live_script))
 }
 
 async fn landing(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, AppError> {
@@ -334,6 +343,11 @@ async fn create_task(
             &form.title,
         )
         .await?;
+    state.events.publish(AppEvent {
+        kind: "task.created".to_owned(),
+        workspace_id: task.workspace_id.clone(),
+        task: Some(task.clone()),
+    });
 
     Ok(Redirect::to(&format!(
         "/app?workspace={}&project={}",
@@ -351,10 +365,15 @@ async fn toggle_task(
     let user = require_user(&state, &headers).await?;
     verify_csrf(&user, &form.csrf)?;
 
-    state
+    let task = state
         .tasks
         .set_completed(&user.user.id, &id, form.completed)
         .await?;
+    state.events.publish(AppEvent {
+        kind: "task.updated".to_owned(),
+        workspace_id: task.workspace_id.clone(),
+        task: Some(task),
+    });
 
     Ok(Redirect::to(&format!(
         "/app?workspace={}&project={}",
@@ -372,13 +391,52 @@ async fn delete_task(
     let user = require_user(&state, &headers).await?;
     verify_csrf(&user, &form.csrf)?;
 
+    let task = state.tasks.get(&user.user.id, &id).await?;
     state.tasks.delete(&user.user.id, &id).await?;
+    state.events.publish(AppEvent {
+        kind: "task.deleted".to_owned(),
+        workspace_id: task.workspace_id.clone(),
+        task: Some(task),
+    });
 
     Ok(Redirect::to(&format!(
         "/app?workspace={}&project={}",
         form.workspace_id, form.project_id
     ))
     .into_response())
+}
+
+async fn events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>, AppError> {
+    let user = require_user(&state, &headers).await?;
+    let allowed: HashSet<String> = state
+        .workspaces
+        .list_workspaces(&user.user.id)
+        .await?
+        .into_iter()
+        .map(|workspace| workspace.id)
+        .collect();
+    let receiver = state.events.subscribe();
+
+    let stream = BroadcastStream::new(receiver).filter_map(move |message| {
+        let event = message.ok()?;
+        if !allowed.contains(&event.workspace_id) {
+            return None;
+        }
+        let data = serde_json::to_string(&event).ok()?;
+        Some(Ok(Event::default().event(event.kind).data(data)))
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+async fn live_script() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        include_str!("../static/live.js"),
+    )
 }
 
 async fn styles() -> impl IntoResponse {
