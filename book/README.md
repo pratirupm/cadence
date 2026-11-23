@@ -2,10 +2,10 @@
 
 **The Todo App Grows Up: build a multi-user task service in Rust.**
 
-This directory holds the chapter drafts for book two. Each chapter maps to a
-working checkpoint in `cadence-app/`, a set of tests, and a small set of
-exercises. The reference implementation is the source of truth; chapter code
-excerpts are intentionally short.
+This directory holds the 24 chapters of book two. Each chapter maps to a working
+checkpoint in `cadence-app/`, a set of tests, and a small set of exercises. The
+reference implementation is the source of truth; chapter code excerpts are
+intentionally short.
 
 | Part | Chapters |
 | --- | --- |
