@@ -7,14 +7,16 @@ book-one CLI todo app and turns it into a real service: accounts, workspaces,
 sharing, recurrence, reminders, an API, a CLI sync client, email, webhooks,
 real-time updates, and production operations.
 
-Status: **chapter 1 scaffolded** — health endpoint, config, structured errors,
-`cadence serve`, graceful shutdown, tracing, and CI. See [PLAN.md](PLAN.md) for
-the full product, architecture, book outline, coverage, milestones, and risks.
+Status: **chapter 2 scaffolded** — health endpoint, config, structured errors,
+`cadence serve`, migrations, SQLite task storage, graceful shutdown, tracing,
+and CI. See [PLAN.md](PLAN.md) for the full product, architecture, book outline,
+coverage, milestones, and risks.
 
 ## Run it
 
 ```console
 $ cd cadence-app
+$ cargo run -- migrate
 $ cargo run -- serve
 $ curl http://127.0.0.1:3000/health
 {"status":"ok"}

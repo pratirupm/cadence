@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use cadence::cli::{Cli, Command};
 use cadence::config::Config;
-use cadence::{app, telemetry};
+use cadence::{AppState, app, db, telemetry};
 use clap::Parser;
 
 #[tokio::main]
@@ -20,16 +20,26 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Serve { bind } => {
+        Command::Serve { bind, database } => {
             let config = Config::new(&bind)?;
             telemetry::init();
+
+            let pool = db::connect(&database).await?;
+            db::migrate(&pool).await?;
 
             let listener = tokio::net::TcpListener::bind(config.bind).await?;
             tracing::info!(address = %config.bind, "cadence listening");
 
-            axum::serve(listener, app())
+            axum::serve(listener, app(AppState { pool }))
                 .with_graceful_shutdown(shutdown_signal())
                 .await?;
+        }
+        Command::Migrate { database } => {
+            telemetry::init();
+
+            let pool = db::connect(&database).await?;
+            db::migrate(&pool).await?;
+            tracing::info!(database = %database, "migrations applied");
         }
     }
 
