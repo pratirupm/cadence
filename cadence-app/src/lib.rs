@@ -110,10 +110,60 @@ async fn count_requests(
 }
 
 async fn metrics(State(state): State<AppState>) -> impl axum::response::IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        state.metrics.render(),
+    let pending_reminders = count_rows(
+        &state,
+        "SELECT COUNT(*) FROM reminders WHERE status = 'pending'",
     )
+    .await;
+    let failed_reminders = count_rows(
+        &state,
+        "SELECT COUNT(*) FROM reminders WHERE status = 'failed'",
+    )
+    .await;
+    let pending_webhooks = count_rows(
+        &state,
+        "SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'pending'",
+    )
+    .await;
+    let failed_webhooks = count_rows(
+        &state,
+        "SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'failed'",
+    )
+    .await;
+
+    let mut body = state.metrics.render();
+    body.push_str(&format!(
+        concat!(
+            "# HELP cadence_reminders_pending Pending reminders.\n",
+            "# TYPE cadence_reminders_pending gauge\n",
+            "cadence_reminders_pending {}\n",
+            "# HELP cadence_reminders_failed Permanently failed reminders.\n",
+            "# TYPE cadence_reminders_failed gauge\n",
+            "cadence_reminders_failed {}\n",
+            "# HELP cadence_webhook_deliveries_pending Pending webhook deliveries.\n",
+            "# TYPE cadence_webhook_deliveries_pending gauge\n",
+            "cadence_webhook_deliveries_pending {}\n",
+            "# HELP cadence_webhook_deliveries_failed Failed webhook deliveries.\n",
+            "# TYPE cadence_webhook_deliveries_failed gauge\n",
+            "cadence_webhook_deliveries_failed {}\n",
+        ),
+        pending_reminders, failed_reminders, pending_webhooks, failed_webhooks,
+    ));
+
+    ([(header::CONTENT_TYPE, "text/plain; version=0.0.4")], body)
+}
+
+async fn count_rows(state: &AppState, sql: &str) -> i64 {
+    match sqlx::query_scalar::<_, i64>(sql)
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(count) => count,
+        Err(error) => {
+            tracing::warn!(%error, "metrics query failed");
+            0
+        }
+    }
 }
 
 async fn health() -> Json<Health> {

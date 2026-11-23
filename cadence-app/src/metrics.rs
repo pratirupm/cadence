@@ -6,8 +6,6 @@ pub struct Metrics {
     pub errors: AtomicU64,
     pub logins: AtomicU64,
     pub login_failures: AtomicU64,
-    pub reminders: AtomicU64,
-    pub webhook_deliveries: AtomicU64,
 }
 
 impl Metrics {
@@ -30,19 +28,11 @@ impl Metrics {
                 "# HELP cadence_login_failures_total Failed logins.\n",
                 "# TYPE cadence_login_failures_total counter\n",
                 "cadence_login_failures_total {}\n",
-                "# HELP cadence_reminders_total Reminders delivered.\n",
-                "# TYPE cadence_reminders_total counter\n",
-                "cadence_reminders_total {}\n",
-                "# HELP cadence_webhook_deliveries_total Webhook deliveries attempted.\n",
-                "# TYPE cadence_webhook_deliveries_total counter\n",
-                "cadence_webhook_deliveries_total {}\n",
             ),
             self.requests.load(Ordering::Relaxed),
             self.errors.load(Ordering::Relaxed),
             self.logins.load(Ordering::Relaxed),
             self.login_failures.load(Ordering::Relaxed),
-            self.reminders.load(Ordering::Relaxed),
-            self.webhook_deliveries.load(Ordering::Relaxed),
         )
     }
 }
