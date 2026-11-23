@@ -4,6 +4,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod query;
+pub mod recurrence;
 pub mod tasks;
 pub mod telemetry;
 pub mod web;
