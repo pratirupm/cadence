@@ -269,20 +269,20 @@ impl Parser {
         };
         self.expect(Token::Colon, "a colon")?;
 
-        let op = if self.consume(&Token::Eq) {
-            Op::Eq
+        let (op, explicit) = if self.consume(&Token::Eq) {
+            (Op::Eq, true)
         } else if self.consume(&Token::NotEq) {
-            Op::NotEq
+            (Op::NotEq, true)
         } else if self.consume(&Token::Lte) {
-            Op::Lte
+            (Op::Lte, true)
         } else if self.consume(&Token::Lt) {
-            Op::Lt
+            (Op::Lt, true)
         } else if self.consume(&Token::Gte) {
-            Op::Gte
+            (Op::Gte, true)
         } else if self.consume(&Token::Gt) {
-            Op::Gt
+            (Op::Gt, true)
         } else {
-            Op::Eq
+            (Op::Eq, false)
         };
 
         let value = match self.next() {
@@ -290,7 +290,7 @@ impl Parser {
             _ => return Err(QueryError::Expected("a value")),
         };
 
-        let op = if field == Field::Text && op == Op::Eq {
+        let op = if field == Field::Text && !explicit && op == Op::Eq {
             Op::Contains
         } else {
             op
@@ -454,6 +454,17 @@ mod tests {
 
         assert_eq!(comparison.value, "buy milk");
         assert_eq!(comparison.op, Op::Contains);
+    }
+
+    #[test]
+    fn text_equality_can_be_requested_explicitly() {
+        let expr = parse("text:=buy").unwrap();
+        let Expr::Comparison(comparison) = expr else {
+            panic!("expected a comparison");
+        };
+
+        assert_eq!(comparison.op, Op::Eq);
+        assert_eq!(comparison.clause(&mut Vec::new()).unwrap(), "title = ?");
     }
 
     #[test]
