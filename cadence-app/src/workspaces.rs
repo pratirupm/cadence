@@ -546,6 +546,26 @@ impl WorkspaceService {
         Ok(member)
     }
 
+    pub async fn can_write_project(
+        &self,
+        user_id: &str,
+        project_id: &str,
+    ) -> Result<bool, WorkspaceError> {
+        let project = self.find_project(project_id).await?;
+        let Some(role) = self.role(&project.workspace_id, user_id).await? else {
+            return Ok(false);
+        };
+        if role.can_manage() {
+            return Ok(true);
+        }
+        if project.visibility == "workspace" {
+            return Ok(role.can_write());
+        }
+
+        Ok(role.can_write()
+            && self.project_role(project_id, user_id).await? == Some(ProjectRole::Editor))
+    }
+
     pub async fn project_role(
         &self,
         project_id: &str,
@@ -794,16 +814,10 @@ mod tests {
             .unwrap();
         assert_eq!(visible, [shared]);
 
-        sqlx::query(
-            "INSERT INTO project_members (project_id, user_id, role, created_at)
-             VALUES (?, ?, 'viewer', ?)",
-        )
-        .bind(&private.id)
-        .bind(&member)
-        .bind(Utc::now())
-        .execute(&workspaces.pool)
-        .await
-        .unwrap();
+        workspaces
+            .add_project_member(&owner, &private.id, &member, ProjectRole::Viewer)
+            .await
+            .unwrap();
 
         let visible = workspaces
             .list_projects(&member, &workspace.id)

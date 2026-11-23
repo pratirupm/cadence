@@ -67,8 +67,7 @@ impl TaskService {
         title: &str,
     ) -> Result<Task, TaskError> {
         let title = normalize_title(title)?;
-        self.require_write(workspace_id, actor_id).await?;
-        self.require_project_access(actor_id, workspace_id, project_id)
+        self.require_project_write(actor_id, workspace_id, project_id)
             .await?;
 
         let now = Utc::now();
@@ -182,8 +181,7 @@ impl TaskService {
     ) -> Result<Task, TaskError> {
         let task = self.find(id).await?;
         let was_completed = task.completed;
-        self.require_write(&task.workspace_id, actor_id).await?;
-        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+        self.require_project_write(actor_id, &task.workspace_id, &task.project_id)
             .await?;
 
         let result = sqlx::query(
@@ -219,8 +217,7 @@ impl TaskService {
         base_version: i64,
     ) -> Result<Task, TaskError> {
         let task = self.find(id).await?;
-        self.require_write(&task.workspace_id, actor_id).await?;
-        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+        self.require_project_write(actor_id, &task.workspace_id, &task.project_id)
             .await?;
         if task.version != base_version {
             return Err(TaskError::Conflict);
@@ -263,8 +260,7 @@ impl TaskService {
     ) -> Result<Task, TaskError> {
         Recurrence::parse(rrule, timezone, starts_at)?;
         let task = self.find(id).await?;
-        self.require_write(&task.workspace_id, actor_id).await?;
-        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+        self.require_project_write(actor_id, &task.workspace_id, &task.project_id)
             .await?;
 
         let result = sqlx::query(
@@ -350,8 +346,7 @@ impl TaskService {
     pub async fn rename(&self, actor_id: &str, id: &str, title: &str) -> Result<Task, TaskError> {
         let title = normalize_title(title)?;
         let task = self.find(id).await?;
-        self.require_write(&task.workspace_id, actor_id).await?;
-        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+        self.require_project_write(actor_id, &task.workspace_id, &task.project_id)
             .await?;
 
         let result = sqlx::query(
@@ -375,8 +370,7 @@ impl TaskService {
 
     pub async fn delete(&self, actor_id: &str, id: &str) -> Result<(), TaskError> {
         let task = self.find(id).await?;
-        self.require_write(&task.workspace_id, actor_id).await?;
-        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+        self.require_project_write(actor_id, &task.workspace_id, &task.project_id)
             .await?;
 
         let result = sqlx::query(
@@ -447,20 +441,30 @@ impl TaskService {
         }
     }
 
+    async fn require_project_write(
+        &self,
+        actor_id: &str,
+        workspace_id: &str,
+        project_id: &str,
+    ) -> Result<(), TaskError> {
+        self.require_project_access(actor_id, workspace_id, project_id)
+            .await?;
+        if self
+            .workspaces()
+            .can_write_project(actor_id, project_id)
+            .await?
+        {
+            Ok(())
+        } else {
+            Err(TaskError::Forbidden)
+        }
+    }
+
     async fn require_member(&self, workspace_id: &str, user_id: &str) -> Result<Role, TaskError> {
         self.workspaces()
             .role(workspace_id, user_id)
             .await?
             .ok_or(TaskError::Forbidden)
-    }
-
-    async fn require_write(&self, workspace_id: &str, user_id: &str) -> Result<(), TaskError> {
-        let role = self.require_member(workspace_id, user_id).await?;
-        if role.can_write() {
-            Ok(())
-        } else {
-            Err(TaskError::Forbidden)
-        }
     }
 
     fn workspaces(&self) -> WorkspaceService {
@@ -816,6 +820,58 @@ mod tests {
                 .await
                 .is_ok()
         );
+        assert!(matches!(
+            fixture
+                .tasks
+                .rename(&member, &task.id, "still secret")
+                .await,
+            Err(TaskError::Forbidden)
+        ));
+
+        fixture
+            .workspaces
+            .add_project_member(
+                &fixture.owner,
+                &private.id,
+                &member,
+                crate::workspaces::ProjectRole::Editor,
+            )
+            .await
+            .unwrap();
+        assert!(
+            fixture
+                .tasks
+                .rename(&member, &task.id, "shared secret")
+                .await
+                .is_ok()
+        );
+
+        let viewer = fixture
+            .auth
+            .create_user("workspace-viewer@example.com", "Viewer", PASSWORD, true)
+            .await
+            .unwrap()
+            .id;
+        fixture
+            .workspaces
+            .add_member(&fixture.owner, &fixture.workspace_id, &viewer, Role::Viewer)
+            .await
+            .unwrap();
+        fixture
+            .workspaces
+            .add_project_member(
+                &fixture.owner,
+                &private.id,
+                &viewer,
+                crate::workspaces::ProjectRole::Editor,
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            fixture.tasks.rename(&viewer, &task.id, "viewer edit").await,
+            Err(TaskError::Forbidden)
+        ));
     }
 
     #[tokio::test]
