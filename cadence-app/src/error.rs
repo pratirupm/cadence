@@ -72,6 +72,7 @@ impl AppError {
                 TaskError::EmptyTitle => (StatusCode::BAD_REQUEST, "task title cannot be empty"),
                 TaskError::Conflict => (StatusCode::CONFLICT, "task changed since it was loaded"),
                 TaskError::Query(_) => (StatusCode::BAD_REQUEST, "invalid task filter"),
+                TaskError::Recurrence(_) => (StatusCode::BAD_REQUEST, "invalid recurrence rule"),
                 TaskError::Workspace(error) => match error {
                     WorkspaceError::NotMember | WorkspaceError::Forbidden => {
                         (StatusCode::FORBIDDEN, "forbidden")

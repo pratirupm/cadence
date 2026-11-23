@@ -3,6 +3,7 @@ use sqlx::SqlitePool;
 use ulid::Ulid;
 
 use crate::query::{self, Param, QueryError};
+use crate::recurrence::{Recurrence, RecurrenceError};
 use crate::workspaces::{Project, Role, WorkspaceError, WorkspaceService};
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
@@ -15,6 +16,8 @@ pub struct Task {
     pub completed: bool,
     pub priority: i64,
     pub due_at: Option<DateTime<Utc>>,
+    pub recurrence: Option<String>,
+    pub recurrence_timezone: Option<String>,
     pub created_by: String,
     pub assigned_to: Option<String>,
     pub version: i64,
@@ -39,6 +42,8 @@ pub enum TaskError {
     Workspace(#[from] WorkspaceError),
     #[error(transparent)]
     Query(#[from] QueryError),
+    #[error(transparent)]
+    Recurrence(#[from] RecurrenceError),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
@@ -74,6 +79,8 @@ impl TaskService {
             completed: false,
             priority: 0,
             due_at: None,
+            recurrence: None,
+            recurrence_timezone: None,
             created_by: actor_id.to_owned(),
             assigned_to: None,
             version: 1,
@@ -85,8 +92,8 @@ impl TaskService {
         sqlx::query(
             "INSERT INTO tasks
              (id, workspace_id, project_id, title, notes, completed, priority, due_at,
-              created_by, assigned_to, version, created_at, updated_at, deleted_at)
-             VALUES (?, ?, ?, ?, '', 0, 0, NULL, ?, NULL, 1, ?, ?, NULL)",
+              recurrence, recurrence_timezone, created_by, assigned_to, version, created_at, updated_at, deleted_at)
+             VALUES (?, ?, ?, ?, '', 0, 0, NULL, NULL, NULL, ?, NULL, 1, ?, ?, NULL)",
         )
         .bind(&task.id)
         .bind(&task.workspace_id)
@@ -122,7 +129,7 @@ impl TaskService {
         let (sql, params) = if filter.is_empty() {
             (
                 "SELECT id, workspace_id, project_id, title, notes, completed, priority, due_at,
-                        created_by, assigned_to, version, created_at, updated_at, deleted_at
+                        recurrence, recurrence_timezone, created_by, assigned_to, version, created_at, updated_at, deleted_at
                  FROM tasks
                  WHERE project_id = ? AND deleted_at IS NULL
                  ORDER BY completed, created_at DESC, id DESC"
@@ -134,7 +141,7 @@ impl TaskService {
             (
                 format!(
                     "SELECT id, workspace_id, project_id, title, notes, completed, priority, due_at,
-                            created_by, assigned_to, version, created_at, updated_at, deleted_at
+                            recurrence, recurrence_timezone, created_by, assigned_to, version, created_at, updated_at, deleted_at
                      FROM tasks
                      WHERE project_id = ? AND deleted_at IS NULL AND ({})
                      ORDER BY completed, created_at DESC, id DESC",
@@ -186,7 +193,104 @@ impl TaskService {
             return Err(TaskError::Conflict);
         }
 
+        let task = self.find(id).await?;
+        if completed && task.recurrence.is_some() {
+            self.create_next_occurrence(&task).await?;
+        }
+
+        Ok(task)
+    }
+
+    pub async fn set_recurrence(
+        &self,
+        actor_id: &str,
+        id: &str,
+        rrule: &str,
+        timezone: &str,
+        starts_at: DateTime<Utc>,
+    ) -> Result<Task, TaskError> {
+        Recurrence::parse(rrule, timezone, starts_at)?;
+        let task = self.find(id).await?;
+        self.require_write(&task.workspace_id, actor_id).await?;
+
+        let result = sqlx::query(
+            "UPDATE tasks
+             SET recurrence = ?, recurrence_timezone = ?, due_at = ?,
+                 version = version + 1, updated_at = ?
+             WHERE id = ? AND version = ? AND deleted_at IS NULL",
+        )
+        .bind(rrule)
+        .bind(timezone)
+        .bind(starts_at)
+        .bind(Utc::now())
+        .bind(id)
+        .bind(task.version)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TaskError::Conflict);
+        }
+
         self.find(id).await
+    }
+
+    async fn create_next_occurrence(&self, task: &Task) -> Result<Option<Task>, TaskError> {
+        let Some(rrule) = task.recurrence.as_deref() else {
+            return Ok(None);
+        };
+        let timezone = task.recurrence_timezone.as_deref().unwrap_or("UTC");
+        let starts_at = task.due_at.unwrap_or(task.created_at);
+        let recurrence = Recurrence::parse(rrule, timezone, starts_at)?;
+        let after = Utc::now().max(starts_at);
+        let Some(due_at) = recurrence.next_after(after) else {
+            return Ok(None);
+        };
+
+        let now = Utc::now();
+        let next = Task {
+            id: Ulid::new().to_string(),
+            workspace_id: task.workspace_id.clone(),
+            project_id: task.project_id.clone(),
+            title: task.title.clone(),
+            notes: task.notes.clone(),
+            completed: false,
+            priority: task.priority,
+            due_at: Some(due_at),
+            recurrence: Some(rrule.to_owned()),
+            recurrence_timezone: Some(timezone.to_owned()),
+            created_by: task.created_by.clone(),
+            assigned_to: task.assigned_to.clone(),
+            version: 1,
+            created_at: now,
+            updated_at: now,
+            deleted_at: None,
+        };
+
+        sqlx::query(
+            "INSERT INTO tasks
+             (id, workspace_id, project_id, title, notes, completed, priority, due_at,
+              recurrence, recurrence_timezone, created_by, assigned_to, version,
+              created_at, updated_at, deleted_at)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)",
+        )
+        .bind(&next.id)
+        .bind(&next.workspace_id)
+        .bind(&next.project_id)
+        .bind(&next.title)
+        .bind(&next.notes)
+        .bind(next.priority)
+        .bind(next.due_at)
+        .bind(&next.recurrence)
+        .bind(&next.recurrence_timezone)
+        .bind(&next.created_by)
+        .bind(&next.assigned_to)
+        .bind(next.created_at)
+        .bind(next.updated_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(Some(next))
     }
 
     pub async fn rename(&self, actor_id: &str, id: &str, title: &str) -> Result<Task, TaskError> {
@@ -239,7 +343,7 @@ impl TaskService {
     async fn find(&self, id: &str) -> Result<Task, TaskError> {
         sqlx::query_as::<_, Task>(
             "SELECT id, workspace_id, project_id, title, notes, completed, priority, due_at,
-                    created_by, assigned_to, version, created_at, updated_at, deleted_at
+                    recurrence, recurrence_timezone, created_by, assigned_to, version, created_at, updated_at, deleted_at
              FROM tasks WHERE id = ? AND deleted_at IS NULL",
         )
         .bind(id)
@@ -503,6 +607,44 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn completing_a_recurring_task_creates_the_next_occurrence() {
+        let fixture = fixture().await;
+        let task = fixture
+            .tasks
+            .create(
+                &fixture.owner,
+                &fixture.workspace_id,
+                &fixture.project_id,
+                "water plants",
+            )
+            .await
+            .unwrap();
+        let starts_at = Utc::now() + chrono::Duration::hours(1);
+        fixture
+            .tasks
+            .set_recurrence(&fixture.owner, &task.id, "FREQ=DAILY", "UTC", starts_at)
+            .await
+            .unwrap();
+
+        fixture
+            .tasks
+            .set_completed(&fixture.owner, &task.id, true)
+            .await
+            .unwrap();
+
+        let tasks = fixture
+            .tasks
+            .list_for_project(&fixture.owner, &fixture.project_id)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks.iter().any(|task| task.completed));
+        let next = tasks.iter().find(|task| !task.completed).unwrap();
+        assert_eq!(next.title, "water plants");
+        assert_eq!(next.due_at.unwrap(), starts_at + chrono::Duration::days(1));
     }
 
     #[tokio::test]
