@@ -7,10 +7,10 @@ book-one CLI todo app and turns it into a real service: accounts, workspaces,
 sharing, recurrence, reminders, an API, a CLI sync client, email, webhooks,
 real-time updates, and production operations.
 
-Status: **chapter 10 scaffolded** — server-rendered MPA with accounts,
-workspaces, projects, roles, task CRUD, a filter DSL, recurrence, and a
-reminder scheduler with retries and grace limits. Includes CSRF, sessions,
-optimistic versions, soft deletes, migrations, tracing, and CI. See
+Status: **chapter 11 scaffolded** — server-rendered MPA with accounts,
+workspaces, projects, roles, task CRUD, a filter DSL, recurrence, reminders
+with retries, an email mailer seam, and in-app notifications. Includes CSRF,
+sessions, optimistic versions, soft deletes, migrations, tracing, and CI. See
 [PLAN.md](PLAN.md) for the full product, architecture, book outline, coverage,
 milestones, and risks.
 

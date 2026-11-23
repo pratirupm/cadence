@@ -2,6 +2,8 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::SqlitePool;
 use ulid::Ulid;
 
+use crate::mailer::{EmailMessage, LogMailer, MailError, Mailer};
+use crate::notifications::{NotificationError, NotificationService};
 use crate::tasks::{TaskError, TaskService};
 use crate::workspaces::{WorkspaceError, WorkspaceService};
 
@@ -29,6 +31,10 @@ pub enum ReminderError {
     Task(#[from] TaskError),
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
+    #[error(transparent)]
+    Mail(#[from] MailError),
+    #[error(transparent)]
+    Notification(#[from] NotificationError),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
@@ -184,17 +190,61 @@ impl ReminderService {
     }
 
     pub async fn run_once(&self, now: DateTime<Utc>, limit: i64) -> Result<usize, ReminderError> {
+        let mailer = LogMailer;
+        let notifications = NotificationService::new(self.pool.clone());
+        self.run_once_with(&mailer, &notifications, now, limit)
+            .await
+    }
+
+    pub async fn run_once_with(
+        &self,
+        mailer: &dyn Mailer,
+        notifications: &NotificationService,
+        now: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<usize, ReminderError> {
         let reminders = self.claim_due(now, limit).await?;
         let count = reminders.len();
 
         for reminder in reminders {
-            tracing::info!(
-                reminder_id = %reminder.id,
-                task_id = %reminder.task_id,
-                user_id = %reminder.user_id,
-                "reminder due"
-            );
-            self.mark_sent(&reminder.id).await?;
+            let detail = sqlx::query_as::<_, (String, String)>(
+                "SELECT t.title, u.email
+                 FROM reminders r
+                 JOIN tasks t ON t.id = r.task_id
+                 JOIN users u ON u.id = r.user_id
+                 WHERE r.id = ?",
+            )
+            .bind(&reminder.id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+            let Some((title, email)) = detail else {
+                self.mark_failed(&reminder.id, now, "task or user disappeared")
+                    .await?;
+                continue;
+            };
+
+            let payload = serde_json::json!({
+                "task_id": reminder.task_id,
+                "title": title,
+            })
+            .to_string();
+            notifications
+                .create(&reminder.user_id, "reminder", &payload)
+                .await?;
+
+            let message = EmailMessage {
+                to: email,
+                subject: format!("Reminder: {title}"),
+                text: format!("Your task \"{title}\" is due for a reminder."),
+            };
+
+            if let Err(error) = mailer.send(&message).await {
+                self.mark_failed(&reminder.id, now, &error.to_string())
+                    .await?;
+            } else {
+                self.mark_sent(&reminder.id).await?;
+            }
         }
 
         Ok(count)
@@ -334,6 +384,29 @@ mod tests {
                 assert_eq!(row.status, "failed");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn sends_email_and_in_app_notification_together() {
+        let fixture = fixture().await;
+        let now = Utc::now();
+        fixture
+            .reminders
+            .create(&fixture.owner, &fixture.task_id, &fixture.owner, now)
+            .await
+            .unwrap();
+
+        let mailer = crate::mailer::RecordingMailer::new();
+        let notifications = NotificationService::new(fixture.reminders.pool.clone());
+        let count = fixture
+            .reminders
+            .run_once_with(&mailer, &notifications, now, 10)
+            .await
+            .unwrap();
+
+        assert_eq!(count, 1);
+        assert_eq!(mailer.messages().len(), 1);
+        assert_eq!(notifications.unread_count(&fixture.owner).await.unwrap(), 1);
     }
 
     #[tokio::test]

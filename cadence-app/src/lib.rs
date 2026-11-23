@@ -3,6 +3,8 @@ pub mod cli;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod mailer;
+pub mod notifications;
 pub mod query;
 pub mod recurrence;
 pub mod reminders;
