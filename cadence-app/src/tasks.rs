@@ -209,6 +209,49 @@ impl TaskService {
         Ok(task)
     }
 
+    pub async fn apply_sync_update(
+        &self,
+        actor_id: &str,
+        id: &str,
+        title: Option<&str>,
+        completed: Option<bool>,
+        base_version: i64,
+    ) -> Result<Task, TaskError> {
+        let task = self.find(id).await?;
+        self.require_write(&task.workspace_id, actor_id).await?;
+        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+            .await?;
+        if task.version != base_version {
+            return Err(TaskError::Conflict);
+        }
+        let title = match title {
+            Some(title) => Some(normalize_title(title)?),
+            None => None,
+        };
+
+        let result = sqlx::query(
+            "UPDATE tasks
+             SET title = COALESCE(?, title),
+                 completed = COALESCE(?, completed),
+                 version = version + 1,
+                 updated_at = ?
+             WHERE id = ? AND version = ? AND deleted_at IS NULL",
+        )
+        .bind(title)
+        .bind(completed)
+        .bind(Utc::now())
+        .bind(id)
+        .bind(base_version)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TaskError::Conflict);
+        }
+
+        self.find(id).await
+    }
+
     pub async fn set_recurrence(
         &self,
         actor_id: &str,

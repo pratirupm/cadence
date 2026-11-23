@@ -1,6 +1,9 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::SqlitePool;
+
+use crate::tasks::{TaskError, TaskService};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
 pub struct Change {
@@ -20,8 +23,42 @@ pub struct SyncPage {
     pub cursor: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncPush {
+    pub operations: Vec<SyncOperation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncOperation {
+    pub op_id: String,
+    pub entity: String,
+    pub entity_id: String,
+    pub op: String,
+    pub base_version: i64,
+    pub title: Option<String>,
+    pub completed: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncResult {
+    pub op_id: String,
+    pub status: String,
+    pub version: Option<i64>,
+    pub conflict: Option<Value>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncPushResponse {
+    pub results: Vec<SyncResult>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
+    #[error(transparent)]
+    Task(#[from] TaskError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
@@ -55,6 +92,129 @@ impl SyncService {
         let cursor = changes.last().map(|change| change.seq).unwrap_or(since);
 
         Ok(SyncPage { changes, cursor })
+    }
+
+    pub async fn push(&self, user_id: &str, push: SyncPush) -> Result<SyncPushResponse, SyncError> {
+        let tasks = TaskService::new(self.pool.clone());
+        let mut results = Vec::new();
+
+        for operation in push.operations {
+            if let Some(stored) = sqlx::query_scalar::<_, String>(
+                "SELECT response FROM sync_operations WHERE op_id = ? AND user_id = ?",
+            )
+            .bind(&operation.op_id)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?
+            {
+                results.push(serde_json::from_str(&stored)?);
+                continue;
+            }
+
+            let result = self
+                .apply_operation(&tasks, user_id, &operation)
+                .await
+                .unwrap_or_else(|error| SyncResult {
+                    op_id: operation.op_id.clone(),
+                    status: "error".to_owned(),
+                    version: None,
+                    conflict: None,
+                    error: Some(error.to_string()),
+                });
+
+            sqlx::query(
+                "INSERT INTO sync_operations (op_id, user_id, response, created_at)
+                 VALUES (?, ?, ?, ?)",
+            )
+            .bind(&result.op_id)
+            .bind(user_id)
+            .bind(serde_json::to_string(&result)?)
+            .bind(Utc::now())
+            .execute(&self.pool)
+            .await?;
+
+            results.push(result);
+        }
+
+        Ok(SyncPushResponse { results })
+    }
+
+    async fn apply_operation(
+        &self,
+        tasks: &TaskService,
+        user_id: &str,
+        operation: &SyncOperation,
+    ) -> Result<SyncResult, SyncError> {
+        if operation.entity != "task" {
+            return Ok(SyncResult {
+                op_id: operation.op_id.clone(),
+                status: "error".to_owned(),
+                version: None,
+                conflict: None,
+                error: Some("unsupported entity".to_owned()),
+            });
+        }
+
+        if operation.op == "update" {
+            match tasks
+                .apply_sync_update(
+                    user_id,
+                    &operation.entity_id,
+                    operation.title.as_deref(),
+                    operation.completed,
+                    operation.base_version,
+                )
+                .await
+            {
+                Ok(task) => Ok(SyncResult {
+                    op_id: operation.op_id.clone(),
+                    status: "ok".to_owned(),
+                    version: Some(task.version),
+                    conflict: None,
+                    error: None,
+                }),
+                Err(TaskError::Conflict) => {
+                    let current = tasks.get(user_id, &operation.entity_id).await?;
+                    Ok(SyncResult {
+                        op_id: operation.op_id.clone(),
+                        status: "conflict".to_owned(),
+                        version: Some(current.version),
+                        conflict: Some(serde_json::to_value(current)?),
+                        error: None,
+                    })
+                }
+                Err(error) => Err(SyncError::Task(error)),
+            }
+        } else if operation.op == "delete" {
+            match tasks.get(user_id, &operation.entity_id).await {
+                Ok(task) if task.version == operation.base_version => {
+                    tasks.delete(user_id, &operation.entity_id).await?;
+                    Ok(SyncResult {
+                        op_id: operation.op_id.clone(),
+                        status: "ok".to_owned(),
+                        version: Some(task.version + 1),
+                        conflict: None,
+                        error: None,
+                    })
+                }
+                Ok(task) => Ok(SyncResult {
+                    op_id: operation.op_id.clone(),
+                    status: "conflict".to_owned(),
+                    version: Some(task.version),
+                    conflict: Some(serde_json::to_value(task)?),
+                    error: None,
+                }),
+                Err(error) => Err(SyncError::Task(error)),
+            }
+        } else {
+            Ok(SyncResult {
+                op_id: operation.op_id.clone(),
+                status: "error".to_owned(),
+                version: None,
+                conflict: None,
+                error: Some("unsupported operation".to_owned()),
+            })
+        }
     }
 }
 
@@ -144,6 +304,65 @@ mod tests {
         assert_eq!(page.changes[2].version, 3);
         assert!(page.changes[0].payload.contains("buy milk"));
         assert_eq!(page.cursor, page.changes.last().unwrap().seq);
+    }
+
+    #[tokio::test]
+    async fn pushes_updates_and_reports_conflicts() {
+        let fixture = fixture().await;
+        let task = fixture
+            .tasks
+            .create(
+                &fixture.owner,
+                &fixture.workspace_id,
+                &fixture.project_id,
+                "buy milk",
+            )
+            .await
+            .unwrap();
+        let push = SyncPush {
+            operations: vec![SyncOperation {
+                op_id: "op-1".to_owned(),
+                entity: "task".to_owned(),
+                entity_id: task.id.clone(),
+                op: "update".to_owned(),
+                base_version: 1,
+                title: Some("buy oat milk".to_owned()),
+                completed: None,
+            }],
+        };
+
+        let response = fixture
+            .sync
+            .push(&fixture.owner, push.clone())
+            .await
+            .unwrap();
+        assert_eq!(response.results[0].status, "ok");
+        assert_eq!(response.results[0].version, Some(2));
+
+        let replay = fixture.sync.push(&fixture.owner, push).await.unwrap();
+        assert_eq!(replay.results[0], response.results[0]);
+
+        let stale = fixture
+            .sync
+            .push(
+                &fixture.owner,
+                SyncPush {
+                    operations: vec![SyncOperation {
+                        op_id: "op-2".to_owned(),
+                        entity: "task".to_owned(),
+                        entity_id: task.id,
+                        op: "update".to_owned(),
+                        base_version: 1,
+                        title: Some("stale".to_owned()),
+                        completed: None,
+                    }],
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(stale.results[0].status, "conflict");
+        assert_eq!(stale.results[0].version, Some(2));
+        assert!(stale.results[0].conflict.is_some());
     }
 
     #[tokio::test]

@@ -77,7 +77,7 @@ struct SyncQuery {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/v1/me", get(me))
-        .route("/api/v1/sync", get(sync))
+        .route("/api/v1/sync", get(sync).post(push_sync))
         .route(
             "/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks",
             get(list_tasks).post(create_task),
@@ -106,6 +106,19 @@ async fn sync(
         .await?;
 
     Ok(Json(page))
+}
+
+async fn push_sync(
+    State(state): State<AppState>,
+    user: ApiUser,
+    Json(push): Json<crate::sync::SyncPush>,
+) -> Result<Json<crate::sync::SyncPushResponse>, AppError> {
+    user.require(Scope::Write)?;
+    let response = crate::sync::SyncService::new(state.pool.clone())
+        .push(&user.user_id, push)
+        .await?;
+
+    Ok(Json(response))
 }
 
 async fn list_tasks(

@@ -99,9 +99,15 @@ impl AppError {
                     (StatusCode::INTERNAL_SERVER_ERROR, "internal error")
                 }
             },
-            Self::Sync(SyncError::Database(_)) => {
+            Self::Sync(SyncError::Database(_) | SyncError::Json(_)) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal error")
             }
+            Self::Sync(SyncError::Task(error)) => match error {
+                TaskError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
+                TaskError::NotFound => (StatusCode::NOT_FOUND, "task not found"),
+                TaskError::Conflict => (StatusCode::CONFLICT, "task changed since it was loaded"),
+                _ => (StatusCode::BAD_REQUEST, "sync error"),
+            },
         }
     }
 }
