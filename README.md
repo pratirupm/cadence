@@ -7,12 +7,12 @@ book-one CLI todo app and turns it into a real service: accounts, workspaces,
 sharing, recurrence, reminders, an API, a CLI sync client, email, webhooks,
 real-time updates, and production operations.
 
-Status: **chapter 15 scaffolded** — accounts, workspaces, roles, private
+Status: **chapter 16 scaffolded** — accounts, workspaces, roles, private
 projects, tasks, filter DSL, recurrence, reminders, notifications, audit, a
-scoped JSON API, a workspace change log, and an offline SQLite CLI client that
-pulls and pushes edits. Includes CSRF, sessions, optimistic versions, soft
-deletes, migrations, tracing, and CI. See [PLAN.md](PLAN.md) for the full
-product, architecture, book outline, coverage, milestones, and risks.
+scoped JSON API, a change log, and an offline CLI with conflict inbox and
+resolution. Includes CSRF, sessions, optimistic versions, soft deletes,
+migrations, tracing, and CI. See [PLAN.md](PLAN.md) for the full product,
+architecture, book outline, coverage, milestones, and risks.
 
 ## Run it
 

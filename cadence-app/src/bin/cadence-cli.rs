@@ -4,7 +4,9 @@ use cadence::db;
 use cadence::sync::{SyncOperation, SyncPage, SyncPush, SyncPushResponse};
 use clap::{Parser, Subcommand};
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 
 #[derive(Debug, Parser)]
@@ -32,15 +34,37 @@ enum Command {
     Done { id: String },
     /// Reopen a locally cached task.
     Undo { id: String },
+    /// List unresolved conflicts.
+    Conflicts,
+    /// Resolve a conflict by keeping the local or server version.
+    Resolve {
+        id: i64,
+        #[arg(long, value_parser = ["local", "server"])]
+        keep: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
 struct TaskPayload {
     id: String,
     title: String,
+    #[serde(deserialize_with = "deserialize_completed")]
     completed: i64,
     version: i64,
     deleted_at: Option<String>,
+}
+
+fn deserialize_completed<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Value::deserialize(deserializer)? {
+        Value::Bool(value) => Ok(if value { 1 } else { 0 }),
+        Value::Number(value) => value
+            .as_i64()
+            .ok_or_else(|| serde::de::Error::custom("integer")),
+        _ => Err(serde::de::Error::custom("boolean or integer")),
+    }
 }
 
 #[tokio::main]
@@ -80,6 +104,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Command::Undo { id } => {
             set_completed(&pool, &id, false).await?;
         }
+        Command::Conflicts => list_conflicts(&pool).await?,
+        Command::Resolve { id, keep } => resolve_conflict(&pool, id, &keep).await?,
     }
 
     Ok(())
@@ -103,6 +129,21 @@ async fn open(path: &str) -> Result<SqlitePool, Box<dyn std::error::Error>> {
         "CREATE TABLE IF NOT EXISTS local_meta (
             key TEXT PRIMARY KEY NOT NULL,
             value TEXT NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS local_conflicts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            local_title TEXT NOT NULL,
+            local_completed INTEGER NOT NULL,
+            server_title TEXT NOT NULL,
+            server_completed INTEGER NOT NULL,
+            server_version INTEGER NOT NULL,
+            resolved INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
     )
     .execute(&pool)
@@ -160,16 +201,18 @@ async fn sync(
 
     for change in &page.changes {
         let payload: TaskPayload = serde_json::from_str(&change.payload)?;
-        let row =
-            sqlx::query_as::<_, (i64, bool)>("SELECT version, dirty FROM local_tasks WHERE id = ?")
-                .bind(&payload.id)
-                .fetch_optional(pool)
-                .await?;
+        let row = sqlx::query_as::<_, (i64, bool, String, bool)>(
+            "SELECT version, dirty, title, completed FROM local_tasks WHERE id = ?",
+        )
+        .bind(&payload.id)
+        .fetch_optional(pool)
+        .await?;
 
-        if let Some((version, dirty)) = row
+        if let Some((version, dirty, title, completed)) = row
             && dirty
-            && payload.version > version
+            && payload.version >= version
         {
+            record_conflict(pool, &payload, &title, completed).await?;
             eprintln!(
                 "conflict: local edits to {} are older than server v{}",
                 payload.id, payload.version
@@ -226,7 +269,7 @@ async fn push(
     let operations = rows
         .iter()
         .map(|(id, title, completed, version)| SyncOperation {
-            op_id: format!("task-{id}-v{version}"),
+            op_id: op_id(id, *version, title, *completed),
             entity: "task".to_owned(),
             entity_id: id.clone(),
             op: "update".to_owned(),
@@ -249,9 +292,9 @@ async fn push(
     for result in response.results {
         if result.status == "ok" {
             if let Some(version) = result.version
-                && let Some((id, _, _, _)) = rows
-                    .iter()
-                    .find(|(id, _, _, version)| result.op_id == format!("task-{id}-v{version}"))
+                && let Some((id, _, _, _)) = rows.iter().find(|(id, title, completed, version)| {
+                    result.op_id == op_id(id, *version, title, *completed)
+                })
             {
                 sqlx::query(
                     "UPDATE local_tasks SET version = ?, dirty = 0
@@ -265,7 +308,16 @@ async fn push(
             }
             println!("pushed {}", result.op_id);
         } else if result.status == "conflict" {
-            eprintln!("conflict on {}: resolve in the web app", result.op_id);
+            if let Some((_, title, completed, _)) =
+                rows.iter().find(|(id, title, completed, version)| {
+                    result.op_id == op_id(id, *version, title, *completed)
+                })
+                && let Some(value) = &result.conflict
+            {
+                let payload: TaskPayload = serde_json::from_value(value.clone())?;
+                record_conflict(pool, &payload, title, *completed).await?;
+            }
+            eprintln!("conflict on {}: run `conflicts` to resolve", result.op_id);
         } else {
             eprintln!(
                 "error on {}: {}",
@@ -276,6 +328,102 @@ async fn push(
     }
 
     Ok(())
+}
+
+async fn record_conflict(
+    pool: &SqlitePool,
+    server: &TaskPayload,
+    local_title: &str,
+    local_completed: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    sqlx::query(
+        "INSERT INTO local_conflicts
+         (task_id, local_title, local_completed, server_title, server_completed,
+          server_version, resolved)
+         VALUES (?, ?, ?, ?, ?, ?, 0)",
+    )
+    .bind(&server.id)
+    .bind(local_title)
+    .bind(local_completed)
+    .bind(&server.title)
+    .bind(server.completed != 0)
+    .bind(server.version)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn list_conflicts(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
+    let rows = sqlx::query_as::<_, (i64, String, String, String, i64)>(
+        "SELECT id, task_id, local_title, server_title, server_version
+         FROM local_conflicts WHERE resolved = 0 ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for (id, task_id, local, server, version) in rows {
+        println!("{id}  {task_id}  local: {local}  server(v{version}): {server}");
+    }
+
+    Ok(())
+}
+
+async fn resolve_conflict(
+    pool: &SqlitePool,
+    id: i64,
+    keep: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let row = sqlx::query_as::<_, (String, String, bool, String, bool, i64)>(
+        "SELECT task_id, local_title, local_completed, server_title, server_completed,
+                server_version
+         FROM local_conflicts WHERE id = ? AND resolved = 0",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or("conflict not found")?;
+
+    let (task_id, local_title, local_completed, server_title, server_completed, server_version) =
+        row;
+
+    if keep == "local" {
+        sqlx::query(
+            "UPDATE local_tasks
+             SET title = ?, completed = ?, version = ?, dirty = 1
+             WHERE id = ?",
+        )
+        .bind(local_title)
+        .bind(local_completed)
+        .bind(server_version)
+        .bind(&task_id)
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query(
+            "UPDATE local_tasks
+             SET title = ?, completed = ?, version = ?, dirty = 0
+             WHERE id = ?",
+        )
+        .bind(server_title)
+        .bind(server_completed)
+        .bind(server_version)
+        .bind(&task_id)
+        .execute(pool)
+        .await?;
+    }
+
+    sqlx::query("UPDATE local_conflicts SET resolved = 1 WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+fn op_id(id: &str, version: i64, title: &str, completed: bool) -> String {
+    let digest = Sha256::digest(format!("{id}:{version}:{title}:{completed}"));
+    format!("task-{id}-v{version}-{}", hex::encode(&digest[..8]))
 }
 
 async fn last_seq(pool: &SqlitePool) -> Result<i64, Box<dyn std::error::Error>> {
