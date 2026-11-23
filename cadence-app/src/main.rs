@@ -3,7 +3,9 @@ use std::process::ExitCode;
 use cadence::auth::AuthService;
 use cadence::cli::{Cli, Command, UserCommand};
 use cadence::config::Config;
+use cadence::reminders::{ReminderService, run_forever};
 use cadence::{AppState, app, db, telemetry};
+use chrono::Utc;
 use clap::Parser;
 
 #[tokio::main]
@@ -39,6 +41,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let pool = db::connect(&database).await?;
             db::migrate(&pool).await?;
             tracing::info!(database = %database, "migrations applied");
+        }
+        Command::Worker { once } => {
+            let pool = db::connect(&database).await?;
+            db::migrate(&pool).await?;
+
+            if once {
+                let count = ReminderService::new(pool).run_once(Utc::now(), 50).await?;
+                println!("sent {count} reminder(s)");
+            } else {
+                tokio::select! {
+                    result = run_forever(pool) => result?,
+                    () = shutdown_signal() => {},
+                }
+            }
         }
         Command::User { command } => {
             let pool = db::connect(&database).await?;

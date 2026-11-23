@@ -26,6 +26,12 @@ pub enum Command {
     },
     /// Apply pending database migrations.
     Migrate,
+    /// Run background reminders.
+    Worker {
+        /// Run one batch and exit.
+        #[arg(long)]
+        once: bool,
+    },
     /// Manage accounts.
     User {
         #[command(subcommand)]
