@@ -11,6 +11,7 @@ pub mod notifications;
 pub mod query;
 pub mod recurrence;
 pub mod reminders;
+pub mod sync;
 pub mod tasks;
 pub mod telemetry;
 pub mod tokens;

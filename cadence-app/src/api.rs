@@ -68,11 +68,20 @@ struct CreateTaskRequest {
     title: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct SyncQuery {
+    since: Option<i64>,
+    limit: Option<i64>,
+}
+
 pub fn router() -> Router<AppState> {
-    Router::new().route("/api/v1/me", get(me)).route(
-        "/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks",
-        get(list_tasks).post(create_task),
-    )
+    Router::new()
+        .route("/api/v1/me", get(me))
+        .route("/api/v1/sync", get(sync))
+        .route(
+            "/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks",
+            get(list_tasks).post(create_task),
+        )
 }
 
 async fn me(user: ApiUser) -> Json<Value> {
@@ -80,6 +89,23 @@ async fn me(user: ApiUser) -> Json<Value> {
         "user_id": user.user_id,
         "scopes": user.scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>(),
     }))
+}
+
+async fn sync(
+    State(state): State<AppState>,
+    user: ApiUser,
+    Query(query): Query<SyncQuery>,
+) -> Result<Json<crate::sync::SyncPage>, AppError> {
+    user.require(Scope::Read)?;
+    let page = crate::sync::SyncService::new(state.pool.clone())
+        .pull(
+            &user.user_id,
+            query.since.unwrap_or(0),
+            query.limit.unwrap_or(100),
+        )
+        .await?;
+
+    Ok(Json(page))
 }
 
 async fn list_tasks(

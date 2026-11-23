@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::auth::AuthError;
 use crate::idempotency::IdempotencyError;
+use crate::sync::SyncError;
 use crate::tasks::TaskError;
 use crate::workspaces::WorkspaceError;
 
@@ -30,6 +31,8 @@ pub enum AppError {
     Task(#[from] TaskError),
     #[error(transparent)]
     Idempotency(#[from] IdempotencyError),
+    #[error(transparent)]
+    Sync(#[from] SyncError),
 }
 
 #[derive(Debug, Serialize)]
@@ -96,6 +99,9 @@ impl AppError {
                     (StatusCode::INTERNAL_SERVER_ERROR, "internal error")
                 }
             },
+            Self::Sync(SyncError::Database(_)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            }
         }
     }
 }
