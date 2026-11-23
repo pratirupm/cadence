@@ -1,0 +1,27 @@
+# Rust build output
+/target
+**/target
+
+# Local databases and data
+*.db
+*.db-shm
+*.db-wal
+/data/
+*.sqlite
+*.sqlite3
+
+# Local config and secrets
+.env
+.env.*
+config/local.toml
+*.pem
+
+# Editor and OS files
+.zed/
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temporary files
+*.log
+/tmp/
