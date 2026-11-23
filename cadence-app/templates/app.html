@@ -66,6 +66,15 @@
         <p>Choose a project to see its tasks.</p>
         {% else %}
         <h2>Tasks</h2>
+        <form method="get" action="/app" class="stack compact">
+            <input type="hidden" name="workspace" value="{{ selected_workspace }}">
+            <input type="hidden" name="project" value="{{ selected_project }}">
+            <label>
+                Filter
+                <input type="text" name="filter" value="{{ filter }}" placeholder="due:today &amp; priority:&gt;2">
+            </label>
+            <button type="submit">Filter</button>
+        </form>
         {% if tasks.is_empty() %}
         <p class="muted">No tasks yet.</p>
         {% else %}

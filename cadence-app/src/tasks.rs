@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 use ulid::Ulid;
 
+use crate::query::{self, Param, QueryError};
 use crate::workspaces::{Project, Role, WorkspaceError, WorkspaceService};
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
@@ -36,6 +37,8 @@ pub enum TaskError {
     Conflict,
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
+    #[error(transparent)]
+    Query(#[from] QueryError),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
@@ -103,21 +106,53 @@ impl TaskService {
         actor_id: &str,
         project_id: &str,
     ) -> Result<Vec<Task>, TaskError> {
+        self.list_filtered(actor_id, project_id, "").await
+    }
+
+    pub async fn list_filtered(
+        &self,
+        actor_id: &str,
+        project_id: &str,
+        filter: &str,
+    ) -> Result<Vec<Task>, TaskError> {
         let project = self.find_project(project_id).await?;
         self.require_member(&project.workspace_id, actor_id).await?;
 
-        let tasks = sqlx::query_as::<_, Task>(
-            "SELECT id, workspace_id, project_id, title, notes, completed, priority, due_at,
-                    created_by, assigned_to, version, created_at, updated_at, deleted_at
-             FROM tasks
-             WHERE project_id = ? AND deleted_at IS NULL
-             ORDER BY completed, created_at DESC, id DESC",
-        )
-        .bind(project_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let filter = filter.trim();
+        let (sql, params) = if filter.is_empty() {
+            (
+                "SELECT id, workspace_id, project_id, title, notes, completed, priority, due_at,
+                        created_by, assigned_to, version, created_at, updated_at, deleted_at
+                 FROM tasks
+                 WHERE project_id = ? AND deleted_at IS NULL
+                 ORDER BY completed, created_at DESC, id DESC"
+                    .to_owned(),
+                Vec::new(),
+            )
+        } else {
+            let compiled = query::parse(filter)?.to_sql()?;
+            (
+                format!(
+                    "SELECT id, workspace_id, project_id, title, notes, completed, priority, due_at,
+                            created_by, assigned_to, version, created_at, updated_at, deleted_at
+                     FROM tasks
+                     WHERE project_id = ? AND deleted_at IS NULL AND ({})
+                     ORDER BY completed, created_at DESC, id DESC",
+                    compiled.clause
+                ),
+                compiled.params,
+            )
+        };
 
-        Ok(tasks)
+        let mut request = sqlx::query_as::<_, Task>(&sql).bind(project_id);
+        for param in params {
+            request = match param {
+                Param::Text(value) => request.bind(value),
+                Param::Integer(value) => request.bind(value),
+            };
+        }
+
+        Ok(request.fetch_all(&self.pool).await?)
     }
 
     pub async fn get(&self, actor_id: &str, id: &str) -> Result<Task, TaskError> {
@@ -468,6 +503,66 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn filters_tasks_with_the_query_language() {
+        let fixture = fixture().await;
+        let milk = fixture
+            .tasks
+            .create(
+                &fixture.owner,
+                &fixture.workspace_id,
+                &fixture.project_id,
+                "buy milk",
+            )
+            .await
+            .unwrap();
+        fixture
+            .tasks
+            .create(
+                &fixture.owner,
+                &fixture.workspace_id,
+                &fixture.project_id,
+                "call dentist",
+            )
+            .await
+            .unwrap();
+
+        let open = fixture
+            .tasks
+            .list_filtered(&fixture.owner, &fixture.project_id, "status:open")
+            .await
+            .unwrap();
+        assert_eq!(open.len(), 2);
+
+        fixture
+            .tasks
+            .set_completed(&fixture.owner, &milk.id, true)
+            .await
+            .unwrap();
+        let done = fixture
+            .tasks
+            .list_filtered(&fixture.owner, &fixture.project_id, "status:done")
+            .await
+            .unwrap();
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0].title, "buy milk");
+
+        let milk_only = fixture
+            .tasks
+            .list_filtered(&fixture.owner, &fixture.project_id, "text:milk")
+            .await
+            .unwrap();
+        assert_eq!(milk_only.len(), 1);
+
+        assert!(matches!(
+            fixture
+                .tasks
+                .list_filtered(&fixture.owner, &fixture.project_id, "owner:ada")
+                .await,
+            Err(TaskError::Query(_))
+        ));
     }
 
     #[tokio::test]

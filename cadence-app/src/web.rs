@@ -39,6 +39,7 @@ struct AppTemplate {
     tasks: Vec<TaskView>,
     selected_workspace: String,
     selected_project: String,
+    filter: String,
     error: String,
 }
 
@@ -79,6 +80,7 @@ struct LoginForm {
 struct AppQuery {
     workspace: Option<String>,
     project: Option<String>,
+    filter: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -237,12 +239,13 @@ async fn app_page(
         .or_else(|| projects.first().map(|project| project.id.clone()))
         .unwrap_or_default();
 
+    let filter = query.filter.unwrap_or_default();
     let tasks = if selected_project.is_empty() {
         Vec::new()
     } else {
         state
             .tasks
-            .list_for_project(&user.user.id, &selected_project)
+            .list_filtered(&user.user.id, &selected_project, &filter)
             .await?
     };
 
@@ -268,6 +271,7 @@ async fn app_page(
         tasks: tasks.into_iter().map(TaskView::from).collect(),
         selected_workspace,
         selected_project,
+        filter,
         error: String::new(),
     })
 }
