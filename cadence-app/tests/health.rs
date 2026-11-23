@@ -7,7 +7,7 @@ use tower::ServiceExt;
 async fn test_app() -> axum::Router {
     let pool = db::connect("sqlite::memory:").await.unwrap();
     db::migrate(&pool).await.unwrap();
-    app(AppState { pool })
+    app(AppState::new(pool))
 }
 
 #[tokio::test]

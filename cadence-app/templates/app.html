@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}App · Cadence{% endblock %}
+
+{% block content %}
+<div class="app-header">
+    <div>
+        <p class="eyebrow">Signed in as</p>
+        <h1>{{ user_name }}</h1>
+    </div>
+    <form method="post" action="/logout">
+        <button class="button button-secondary" type="submit">Log out</button>
+    </form>
+</div>
+
+{% if !error.is_empty() %}
+<p class="error" role="alert">{{ error }}</p>
+{% endif %}
+
+<div class="layout">
+    <aside class="sidebar">
+        <h2>Workspaces</h2>
+        <ul class="plain-list">
+            {% for workspace in workspaces %}
+            <li>
+                <a class="{% if workspace.selected %}selected{% endif %}"
+                   href="/app?workspace={{ workspace.id }}">{{ workspace.name }}</a>
+            </li>
+            {% endfor %}
+        </ul>
+        <form method="post" action="/workspaces" class="stack compact">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <label>
+                New workspace
+                <input type="text" name="name" required maxlength="80">
+            </label>
+            <button type="submit">Create workspace</button>
+        </form>
+    </aside>
+
+    <section>
+        {% if selected_workspace.is_empty() %}
+        <p>Create a workspace to start organizing tasks.</p>
+        {% else %}
+        <h2>Projects</h2>
+        <ul class="plain-list">
+            {% for project in projects %}
+            <li>
+                <a class="{% if project.selected %}selected{% endif %}"
+                   href="/app?workspace={{ selected_workspace }}&project={{ project.id }}">{{ project.name }}</a>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <form method="post" action="/projects" class="stack compact">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="workspace_id" value="{{ selected_workspace }}">
+            <label>
+                New project
+                <input type="text" name="name" required maxlength="80">
+            </label>
+            <button type="submit">Create project</button>
+        </form>
+
+        {% if selected_project.is_empty() %}
+        <p>Choose a project to see its tasks.</p>
+        {% else %}
+        <h2>Tasks</h2>
+        {% if tasks.is_empty() %}
+        <p class="muted">No tasks yet.</p>
+        {% else %}
+        <ul class="task-list">
+            {% for task in tasks %}
+            <li class="{% if task.completed %}task-completed{% endif %}">
+                <form method="post" action="/tasks/{{ task.id }}/toggle">
+                    <input type="hidden" name="csrf" value="{{ csrf }}">
+                    <input type="hidden" name="completed" value="{% if task.completed %}false{% else %}true{% endif %}">
+                    <input type="hidden" name="workspace_id" value="{{ task.workspace_id }}">
+                    <input type="hidden" name="project_id" value="{{ task.project_id }}">
+                    <button class="task-toggle" type="submit" aria-label="Toggle task">
+                        {% if task.completed %}✓{% else %}○{% endif %}
+                    </button>
+                </form>
+                <span class="task-title">{{ task.title }}</span>
+                <form method="post" action="/tasks/{{ task.id }}/delete">
+                    <input type="hidden" name="csrf" value="{{ csrf }}">
+                    <input type="hidden" name="workspace_id" value="{{ task.workspace_id }}">
+                    <input type="hidden" name="project_id" value="{{ task.project_id }}">
+                    <button class="link-button" type="submit">Delete</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        <form method="post" action="/tasks" class="stack compact">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="workspace_id" value="{{ selected_workspace }}">
+            <input type="hidden" name="project_id" value="{{ selected_project }}">
+            <label>
+                New task
+                <input type="text" name="title" required maxlength="200" autofocus>
+            </label>
+            <button type="submit">Add task</button>
+        </form>
+        {% endif %}
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

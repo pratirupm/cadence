@@ -31,7 +31,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let listener = tokio::net::TcpListener::bind(config.bind).await?;
             tracing::info!(address = %config.bind, "cadence listening");
 
-            axum::serve(listener, app(AppState { pool }))
+            axum::serve(listener, app(AppState::new(pool)))
                 .with_graceful_shutdown(shutdown_signal())
                 .await?;
         }

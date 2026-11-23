@@ -5,6 +5,7 @@ pub mod db;
 pub mod error;
 pub mod tasks;
 pub mod telemetry;
+pub mod web;
 pub mod workspaces;
 
 use axum::Json;
@@ -14,11 +15,28 @@ use serde::Serialize;
 use sqlx::SqlitePool;
 use tower_http::trace::TraceLayer;
 
+use crate::auth::AuthService;
 use crate::error::AppError;
+use crate::tasks::TaskService;
+use crate::workspaces::WorkspaceService;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AppState {
     pub pool: SqlitePool,
+    pub auth: AuthService,
+    pub workspaces: WorkspaceService,
+    pub tasks: TaskService,
+}
+
+impl AppState {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self {
+            auth: AuthService::new(pool.clone()),
+            workspaces: WorkspaceService::new(pool.clone()),
+            tasks: TaskService::new(pool.clone()),
+            pool,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -29,6 +47,7 @@ struct Health {
 /// Build the HTTP application.
 pub fn app(state: AppState) -> Router {
     Router::new()
+        .merge(web::router())
         .route("/health", get(health))
         .fallback(not_found)
         .with_state(state)
