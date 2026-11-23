@@ -47,6 +47,25 @@ pub enum Command {
         #[command(subcommand)]
         command: TokenCommand,
     },
+    /// Manage reminders.
+    Reminder {
+        #[command(subcommand)]
+        command: ReminderCommand,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq, Subcommand)]
+pub enum ReminderCommand {
+    /// Create a reminder for a task.
+    Create {
+        #[arg(long)]
+        email: String,
+        #[arg(long)]
+        task_id: String,
+        /// RFC 3339 timestamp, for example 2026-12-01T09:00:00Z.
+        #[arg(long)]
+        at: String,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Subcommand)]

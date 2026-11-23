@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use cadence::auth::AuthService;
-use cadence::cli::{Cli, Command, TokenCommand, UserCommand};
+use cadence::cli::{Cli, Command, ReminderCommand, TokenCommand, UserCommand};
 use cadence::config::Config;
 use cadence::reminders::{ReminderService, run_forever as reminder_worker};
 use cadence::tokens::{Scope, TokenService};
@@ -116,6 +116,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                         .collect::<Result<Vec<_>, _>>()?;
                     let (raw, summary) = tokens.create(&user.id, &name, &scopes, None).await?;
                     println!("{} {}", summary.id, raw);
+                }
+            }
+        }
+        Command::Reminder { command } => {
+            let pool = db::connect(&database).await?;
+            db::migrate(&pool).await?;
+            let auth = AuthService::new(pool.clone());
+            let reminders = ReminderService::new(pool);
+
+            match command {
+                ReminderCommand::Create { email, task_id, at } => {
+                    let user = auth
+                        .find_by_email(&email)
+                        .await?
+                        .ok_or("no account with that email")?;
+                    let at = chrono::DateTime::parse_from_rfc3339(&at)?.with_timezone(&Utc);
+                    let reminder = reminders.create(&user.id, &task_id, &user.id, at).await?;
+                    println!("{} {}", reminder.id, reminder.remind_at.to_rfc3339());
                 }
             }
         }
