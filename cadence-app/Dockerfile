@@ -10,7 +10,9 @@ RUN cargo build --release --bin cadence
 
 FROM debian:bookworm-slim
 
-RUN useradd --create-home --uid 10001 cadence
+RUN useradd --create-home --uid 10001 cadence \
+    && mkdir -p /data \
+    && chown cadence:cadence /data
 COPY --from=builder /app/target/release/cadence /usr/local/bin/cadence
 
 USER cadence

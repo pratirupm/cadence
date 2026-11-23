@@ -1,6 +1,19 @@
 services:
+  migrate:
+    build: .
+    environment:
+      CADENCE_DATABASE: /data/cadence.db
+      RUST_LOG: info
+    volumes:
+      - cadence-data:/data
+    command: ["cadence", "migrate"]
+    restart: "no"
+
   cadence:
     build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "3000:3000"
     environment:
@@ -9,6 +22,20 @@ services:
     volumes:
       - cadence-data:/data
     command: ["cadence", "serve", "--bind", "0.0.0.0:3000"]
+    restart: unless-stopped
+
+  worker:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      CADENCE_DATABASE: /data/cadence.db
+      RUST_LOG: info
+    volumes:
+      - cadence-data:/data
+    command: ["cadence", "worker"]
+    restart: unless-stopped
 
 volumes:
   cadence-data:
