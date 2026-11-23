@@ -445,3 +445,34 @@ async fn set_last_seq(pool: &SqlitePool, seq: i64) -> Result<(), Box<dyn std::er
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn operation_ids_are_deterministic_and_content_sensitive() {
+        let first = op_id("task-1", 2, "buy milk", false);
+        let again = op_id("task-1", 2, "buy milk", false);
+        let changed = op_id("task-1", 2, "buy oat milk", false);
+
+        assert_eq!(first, again);
+        assert_ne!(first, changed);
+        assert!(first.starts_with("task-task-1-v2-"));
+    }
+
+    #[test]
+    fn payload_accepts_boolean_and_integer_completion() {
+        let as_integer: TaskPayload = serde_json::from_str(
+            r#"{"id":"1","title":"x","completed":1,"version":1,"deleted_at":null}"#,
+        )
+        .unwrap();
+        let as_boolean: TaskPayload = serde_json::from_str(
+            r#"{"id":"1","title":"x","completed":true,"version":1,"deleted_at":null}"#,
+        )
+        .unwrap();
+
+        assert_eq!(as_integer.completed, 1);
+        assert_eq!(as_boolean.completed, 1);
+    }
+}
