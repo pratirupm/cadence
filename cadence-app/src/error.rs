@@ -61,7 +61,7 @@ impl AppError {
                     (StatusCode::BAD_REQUEST, "invalid invitation")
                 }
                 WorkspaceError::InvalidRole => (StatusCode::BAD_REQUEST, "invalid role"),
-                WorkspaceError::Database(_) => {
+                WorkspaceError::Audit(_) | WorkspaceError::Database(_) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, "internal error")
                 }
             },

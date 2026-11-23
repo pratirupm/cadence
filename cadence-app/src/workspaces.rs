@@ -4,6 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::SqlitePool;
 use ulid::Ulid;
 
+use crate::audit::{AuditError, AuditService};
 use crate::auth::{hash_token, random_token};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +63,25 @@ impl ProjectVisibility {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectRole {
+    Editor,
+    Viewer,
+}
+
+impl ProjectRole {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Editor => "editor",
+            Self::Viewer => "viewer",
+        }
+    }
+
+    pub fn can_write(self) -> bool {
+        self == Self::Editor
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct Workspace {
     pub id: String,
@@ -107,6 +127,8 @@ pub enum WorkspaceError {
     EmailMismatch,
     #[error("invalid role")]
     InvalidRole,
+    #[error(transparent)]
+    Audit(#[from] AuditError),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
@@ -167,6 +189,15 @@ impl WorkspaceService {
         .await?;
 
         transaction.commit().await?;
+        self.audit()
+            .record(
+                &workspace.id,
+                owner_id,
+                "workspace.created",
+                &workspace.id,
+                "",
+            )
+            .await?;
 
         Ok(workspace)
     }
@@ -243,6 +274,15 @@ impl WorkspaceService {
         .bind(project.created_at)
         .execute(&self.pool)
         .await?;
+        self.audit()
+            .record(
+                workspace_id,
+                actor_id,
+                "project.created",
+                &project.id,
+                visibility.as_str(),
+            )
+            .await?;
 
         Ok(project)
     }
@@ -298,6 +338,15 @@ impl WorkspaceService {
         .bind(Utc::now())
         .execute(&self.pool)
         .await?;
+        self.audit()
+            .record(
+                workspace_id,
+                actor_id,
+                "member.added",
+                user_id,
+                role.as_str(),
+            )
+            .await?;
 
         Ok(())
     }
@@ -355,13 +404,22 @@ impl WorkspaceService {
         )
         .bind(Ulid::new().to_string())
         .bind(workspace_id)
-        .bind(email)
+        .bind(&email)
         .bind(role.as_str())
         .bind(hash_token(&token))
         .bind(now + Duration::days(7))
         .bind(now)
         .execute(&self.pool)
         .await?;
+        self.audit()
+            .record(
+                workspace_id,
+                actor_id,
+                "invitation.created",
+                &email,
+                role.as_str(),
+            )
+            .await?;
 
         Ok(token)
     }
@@ -412,8 +470,115 @@ impl WorkspaceService {
             .await?;
 
         transaction.commit().await?;
+        self.audit()
+            .record(
+                &workspace_id,
+                user_id,
+                "invitation.accepted",
+                &workspace_id,
+                &role,
+            )
+            .await?;
 
         Ok(workspace_id)
+    }
+
+    pub async fn add_project_member(
+        &self,
+        actor_id: &str,
+        project_id: &str,
+        user_id: &str,
+        role: ProjectRole,
+    ) -> Result<(), WorkspaceError> {
+        let project = self.find_project(project_id).await?;
+        self.require_role(&project.workspace_id, actor_id, Role::can_manage)
+            .await?;
+        if self.role(&project.workspace_id, user_id).await?.is_none() {
+            return Err(WorkspaceError::NotMember);
+        }
+
+        sqlx::query(
+            "INSERT INTO project_members (project_id, user_id, role, created_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT (project_id, user_id) DO UPDATE SET role = excluded.role",
+        )
+        .bind(project_id)
+        .bind(user_id)
+        .bind(role.as_str())
+        .bind(Utc::now())
+        .execute(&self.pool)
+        .await?;
+        self.audit()
+            .record(
+                &project.workspace_id,
+                actor_id,
+                "project_member.added",
+                user_id,
+                role.as_str(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn can_access_project(
+        &self,
+        user_id: &str,
+        project_id: &str,
+    ) -> Result<bool, WorkspaceError> {
+        let project = self.find_project(project_id).await?;
+        let Some(role) = self.role(&project.workspace_id, user_id).await? else {
+            return Ok(false);
+        };
+        if role.can_manage() || project.visibility == "workspace" {
+            return Ok(true);
+        }
+
+        let member = sqlx::query_scalar::<_, i64>(
+            "SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ? LIMIT 1",
+        )
+        .bind(project_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .is_some();
+
+        Ok(member)
+    }
+
+    pub async fn project_role(
+        &self,
+        project_id: &str,
+        user_id: &str,
+    ) -> Result<Option<ProjectRole>, WorkspaceError> {
+        let role = sqlx::query_scalar::<_, String>(
+            "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
+        )
+        .bind(project_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(role.and_then(|role| match role.as_str() {
+            "editor" => Some(ProjectRole::Editor),
+            "viewer" => Some(ProjectRole::Viewer),
+            _ => None,
+        }))
+    }
+
+    async fn find_project(&self, project_id: &str) -> Result<Project, WorkspaceError> {
+        sqlx::query_as::<_, Project>(
+            "SELECT id, workspace_id, name, visibility, archived_at, created_at
+             FROM projects WHERE id = ? AND archived_at IS NULL",
+        )
+        .bind(project_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or(WorkspaceError::ProjectNotFound)
+    }
+
+    fn audit(&self) -> AuditService {
+        AuditService::new(self.pool.clone())
     }
 
     async fn require_member(

@@ -67,7 +67,8 @@ impl TaskService {
     ) -> Result<Task, TaskError> {
         let title = normalize_title(title)?;
         self.require_write(workspace_id, actor_id).await?;
-        self.require_project(workspace_id, project_id).await?;
+        self.require_project_access(actor_id, workspace_id, project_id)
+            .await?;
 
         let now = Utc::now();
         let task = Task {
@@ -124,6 +125,8 @@ impl TaskService {
     ) -> Result<Vec<Task>, TaskError> {
         let project = self.find_project(project_id).await?;
         self.require_member(&project.workspace_id, actor_id).await?;
+        self.require_project_access(actor_id, &project.workspace_id, project_id)
+            .await?;
 
         let filter = filter.trim();
         let (sql, params) = if filter.is_empty() {
@@ -165,6 +168,8 @@ impl TaskService {
     pub async fn get(&self, actor_id: &str, id: &str) -> Result<Task, TaskError> {
         let task = self.find(id).await?;
         self.require_member(&task.workspace_id, actor_id).await?;
+        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+            .await?;
         Ok(task)
     }
 
@@ -176,6 +181,8 @@ impl TaskService {
     ) -> Result<Task, TaskError> {
         let task = self.find(id).await?;
         self.require_write(&task.workspace_id, actor_id).await?;
+        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+            .await?;
 
         let result = sqlx::query(
             "UPDATE tasks
@@ -212,6 +219,8 @@ impl TaskService {
         Recurrence::parse(rrule, timezone, starts_at)?;
         let task = self.find(id).await?;
         self.require_write(&task.workspace_id, actor_id).await?;
+        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+            .await?;
 
         let result = sqlx::query(
             "UPDATE tasks
@@ -297,6 +306,8 @@ impl TaskService {
         let title = normalize_title(title)?;
         let task = self.find(id).await?;
         self.require_write(&task.workspace_id, actor_id).await?;
+        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+            .await?;
 
         let result = sqlx::query(
             "UPDATE tasks
@@ -320,6 +331,8 @@ impl TaskService {
     pub async fn delete(&self, actor_id: &str, id: &str) -> Result<(), TaskError> {
         let task = self.find(id).await?;
         self.require_write(&task.workspace_id, actor_id).await?;
+        self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+            .await?;
 
         let result = sqlx::query(
             "UPDATE tasks
@@ -369,6 +382,24 @@ impl TaskService {
             return Err(TaskError::ProjectNotFound);
         }
         Ok(())
+    }
+
+    async fn require_project_access(
+        &self,
+        actor_id: &str,
+        workspace_id: &str,
+        project_id: &str,
+    ) -> Result<(), TaskError> {
+        self.require_project(workspace_id, project_id).await?;
+        if self
+            .workspaces()
+            .can_access_project(actor_id, project_id)
+            .await?
+        {
+            Ok(())
+        } else {
+            Err(TaskError::Forbidden)
+        }
     }
 
     async fn require_member(&self, workspace_id: &str, user_id: &str) -> Result<Role, TaskError> {
@@ -645,6 +676,62 @@ mod tests {
         let next = tasks.iter().find(|task| !task.completed).unwrap();
         assert_eq!(next.title, "water plants");
         assert_eq!(next.due_at.unwrap(), starts_at + chrono::Duration::days(1));
+    }
+
+    #[tokio::test]
+    async fn private_projects_require_project_membership() {
+        let fixture = fixture().await;
+        let member = fixture
+            .auth
+            .create_user("member@example.com", "Member", PASSWORD, true)
+            .await
+            .unwrap()
+            .id;
+        fixture
+            .workspaces
+            .add_member(&fixture.owner, &fixture.workspace_id, &member, Role::Member)
+            .await
+            .unwrap();
+        let private = fixture
+            .workspaces
+            .create_project(
+                &fixture.owner,
+                &fixture.workspace_id,
+                "Private",
+                crate::workspaces::ProjectVisibility::Private,
+            )
+            .await
+            .unwrap();
+        let task = fixture
+            .tasks
+            .create(&fixture.owner, &fixture.workspace_id, &private.id, "secret")
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            fixture.tasks.get(&member, &task.id).await,
+            Err(TaskError::Forbidden)
+        ));
+
+        fixture
+            .workspaces
+            .add_project_member(
+                &fixture.owner,
+                &private.id,
+                &member,
+                crate::workspaces::ProjectRole::Viewer,
+            )
+            .await
+            .unwrap();
+
+        assert!(fixture.tasks.get(&member, &task.id).await.is_ok());
+        assert!(
+            fixture
+                .tasks
+                .list_for_project(&member, &private.id)
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
