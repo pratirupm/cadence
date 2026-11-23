@@ -181,6 +181,7 @@ impl TaskService {
         completed: bool,
     ) -> Result<Task, TaskError> {
         let task = self.find(id).await?;
+        let was_completed = task.completed;
         self.require_write(&task.workspace_id, actor_id).await?;
         self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
             .await?;
@@ -202,7 +203,7 @@ impl TaskService {
         }
 
         let task = self.find(id).await?;
-        if completed && task.recurrence.is_some() {
+        if completed && !was_completed && task.recurrence.is_some() {
             self.create_next_occurrence(&task).await?;
         }
 
@@ -720,6 +721,45 @@ mod tests {
         let next = tasks.iter().find(|task| !task.completed).unwrap();
         assert_eq!(next.title, "water plants");
         assert_eq!(next.due_at.unwrap(), starts_at + chrono::Duration::days(1));
+    }
+
+    #[tokio::test]
+    async fn completing_twice_does_not_duplicate_the_next_occurrence() {
+        let fixture = fixture().await;
+        let task = fixture
+            .tasks
+            .create(
+                &fixture.owner,
+                &fixture.workspace_id,
+                &fixture.project_id,
+                "water plants",
+            )
+            .await
+            .unwrap();
+        let starts_at = Utc::now() + chrono::Duration::hours(1);
+        fixture
+            .tasks
+            .set_recurrence(&fixture.owner, &task.id, "FREQ=DAILY", "UTC", starts_at)
+            .await
+            .unwrap();
+
+        fixture
+            .tasks
+            .set_completed(&fixture.owner, &task.id, true)
+            .await
+            .unwrap();
+        fixture
+            .tasks
+            .set_completed(&fixture.owner, &task.id, true)
+            .await
+            .unwrap();
+
+        let tasks = fixture
+            .tasks
+            .list_for_project(&fixture.owner, &fixture.project_id)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 2);
     }
 
     #[tokio::test]
