@@ -299,6 +299,44 @@ Keep `/health` cheap and unauthenticated for the orchestrator. Put `/ready` behi
 the same internal network if it reveals version information. The exercise asks
 for it.
 
+## Deployment checklist
+
+| Step | Command | Verify |
+| --- | --- | --- |
+| Build | `cargo build --release --bin cadence` | binary exists |
+| Image | `docker compose build` | image tag |
+| Migrate | `docker compose run --rm migrate` | “migrations applied” |
+| Start | `docker compose up -d cadence worker` | containers running |
+| Liveness | `curl -f localhost:3000/health` | 200 JSON |
+| Real read | `curl -f .../api/v1/.../tasks` | 200 JSON |
+| Queue | `curl -s .../metrics` | gauges present |
+| Backup | `cadence backup ...` | file size > 0 |
+| Restore | restore into a fresh volume | real read works |
+| Stop | `docker compose stop` | graceful log |
+
+The table is the runbook. A deploy that skips the real read and the restore is a
+deploy that has not been tested.
+
+## What is not production-ready
+
+The book is complete as a teaching service, not as a finished SaaS. The remaining
+production gaps are explicit:
+
+- no HSTS or `Secure` cookie flag; add under HTTPS
+- no `/ready` database check
+- no external log/metrics backend or alerting
+- no shared rate limiter or API token rate limit
+- no worker claim/lease for reminders or webhooks
+- no automated backup retention or off-host upload
+- no request IDs or audit IPs
+- no pagination on the task list
+- SQLite single-writer scaling limits
+- no password reset email provider; the `LogMailer` is a seam
+
+Naming these is part of finishing the project. A service that claims to be
+production-ready without them is lying; a service that lists them is honest and
+testable.
+
 ## Failure modes you will meet
 
 **The container starts and immediately exits.** The database path is not writable,
