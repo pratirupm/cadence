@@ -198,10 +198,16 @@ async fn login(
     Form(form): Form<LoginForm>,
 ) -> Result<Response, AppError> {
     match state.auth.login(&form.email, &form.password).await {
-        Ok(session) => with_session(session, "/app"),
-        Err(_) => render(LoginTemplate {
-            error: "Invalid email or password.".to_owned(),
-        }),
+        Ok(session) => {
+            state.metrics.inc(&state.metrics.logins);
+            with_session(session, "/app")
+        }
+        Err(_) => {
+            state.metrics.inc(&state.metrics.login_failures);
+            render(LoginTemplate {
+                error: "Invalid email or password.".to_owned(),
+            })
+        }
     }
 }
 
