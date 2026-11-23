@@ -5,7 +5,7 @@ use sqlx::SqlitePool;
 
 use crate::tasks::{TaskError, TaskService};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Change {
     pub seq: i64,
     pub workspace_id: String,
@@ -17,7 +17,7 @@ pub struct Change {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncPage {
     pub changes: Vec<Change>,
     pub cursor: i64,
