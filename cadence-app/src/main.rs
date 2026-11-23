@@ -1,6 +1,7 @@
 use std::process::ExitCode;
 
-use cadence::cli::{Cli, Command};
+use cadence::auth::AuthService;
+use cadence::cli::{Cli, Command, UserCommand};
 use cadence::config::Config;
 use cadence::{AppState, app, db, telemetry};
 use clap::Parser;
@@ -17,12 +18,12 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
+    let Cli { database, command } = Cli::parse();
+    telemetry::init();
 
-    match cli.command {
-        Command::Serve { bind, database } => {
+    match command {
+        Command::Serve { bind } => {
             let config = Config::new(&bind)?;
-            telemetry::init();
 
             let pool = db::connect(&database).await?;
             db::migrate(&pool).await?;
@@ -34,12 +35,27 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .with_graceful_shutdown(shutdown_signal())
                 .await?;
         }
-        Command::Migrate { database } => {
-            telemetry::init();
-
+        Command::Migrate => {
             let pool = db::connect(&database).await?;
             db::migrate(&pool).await?;
             tracing::info!(database = %database, "migrations applied");
+        }
+        Command::User { command } => {
+            let pool = db::connect(&database).await?;
+            db::migrate(&pool).await?;
+            let auth = AuthService::new(pool);
+
+            match command {
+                UserCommand::Create {
+                    email,
+                    name,
+                    password,
+                    verified,
+                } => {
+                    let user = auth.create_user(&email, &name, &password, verified).await?;
+                    println!("{} {}", user.id, user.email);
+                }
+            }
         }
     }
 
