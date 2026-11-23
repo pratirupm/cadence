@@ -195,6 +195,95 @@ async fn signup_login_and_task_flow() {
 }
 
 #[tokio::test]
+async fn logout_requires_csrf_and_clears_the_session() {
+    let router = test_app().await;
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/signup")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(form(&[
+                    ("name", "Ada"),
+                    ("email", "ada@example.com"),
+                    ("password", "correct horse battery staple"),
+                ]))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let cookie = session_cookie(&response);
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/app")
+                .header(header::COOKIE, &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let html = body_text(response).await;
+    let token = csrf(&html);
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/logout")
+                .header(header::COOKIE, &cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(form(&[("csrf", "wrong")]))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/logout")
+                .header(header::COOKIE, &cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(form(&[("csrf", &token)]))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(
+        response
+            .headers()
+            .get(header::SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("Max-Age=0")
+    );
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/app")
+                .header(header::COOKIE, &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/login");
+}
+
+#[tokio::test]
 async fn login_rejects_a_bad_password() {
     let router = test_app().await;
 

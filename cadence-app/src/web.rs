@@ -84,6 +84,11 @@ struct LoginForm {
 }
 
 #[derive(Debug, Deserialize)]
+struct LogoutForm {
+    csrf: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct AppQuery {
     workspace: Option<String>,
     project: Option<String>,
@@ -219,7 +224,14 @@ async fn login(
     }
 }
 
-async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, AppError> {
+async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<LogoutForm>,
+) -> Result<Response, AppError> {
+    let user = require_user(&state, &headers).await?;
+    verify_csrf(&user, &form.csrf)?;
+
     if let Some(token) = session_token(&headers) {
         state.auth.logout(&token).await?;
     }

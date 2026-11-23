@@ -9,6 +9,7 @@
         <h1>{{ user_name }}</h1>
     </div>
     <form method="post" action="/logout">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="button button-secondary" type="submit">Log out</button>
     </form>
 </div>
