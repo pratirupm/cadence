@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use sqlx::SqlitePool;
 use ulid::Ulid;
 
@@ -6,7 +7,7 @@ use crate::query::{self, Param, QueryError};
 use crate::recurrence::{Recurrence, RecurrenceError};
 use crate::workspaces::{Project, Role, WorkspaceError, WorkspaceService};
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
 pub struct Task {
     pub id: String,
     pub workspace_id: String,

@@ -1,9 +1,11 @@
+pub mod api;
 pub mod audit;
 pub mod auth;
 pub mod cli;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod idempotency;
 pub mod mailer;
 pub mod notifications;
 pub mod query;
@@ -11,6 +13,7 @@ pub mod recurrence;
 pub mod reminders;
 pub mod tasks;
 pub mod telemetry;
+pub mod tokens;
 pub mod web;
 pub mod workspaces;
 
@@ -24,6 +27,7 @@ use tower_http::trace::TraceLayer;
 use crate::auth::AuthService;
 use crate::error::AppError;
 use crate::tasks::TaskService;
+use crate::tokens::TokenService;
 use crate::workspaces::WorkspaceService;
 
 #[derive(Clone)]
@@ -32,6 +36,7 @@ pub struct AppState {
     pub auth: AuthService,
     pub workspaces: WorkspaceService,
     pub tasks: TaskService,
+    pub tokens: TokenService,
 }
 
 impl AppState {
@@ -40,6 +45,7 @@ impl AppState {
             auth: AuthService::new(pool.clone()),
             workspaces: WorkspaceService::new(pool.clone()),
             tasks: TaskService::new(pool.clone()),
+            tokens: TokenService::new(pool.clone()),
             pool,
         }
     }
@@ -54,6 +60,7 @@ struct Health {
 pub fn app(state: AppState) -> Router {
     Router::new()
         .merge(web::router())
+        .merge(api::router())
         .route("/health", get(health))
         .fallback(not_found)
         .with_state(state)

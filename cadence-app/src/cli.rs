@@ -37,6 +37,25 @@ pub enum Command {
         #[command(subcommand)]
         command: UserCommand,
     },
+    /// Manage API tokens.
+    Token {
+        #[command(subcommand)]
+        command: TokenCommand,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq, Subcommand)]
+pub enum TokenCommand {
+    /// Create an API token for an account.
+    Create {
+        #[arg(long)]
+        email: String,
+        #[arg(long)]
+        name: String,
+        /// Comma-separated scopes: read, write, admin.
+        #[arg(long, value_delimiter = ',', default_value = "read")]
+        scopes: Vec<String>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Subcommand)]

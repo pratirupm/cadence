@@ -5,6 +5,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::auth::AuthError;
+use crate::idempotency::IdempotencyError;
 use crate::tasks::TaskError;
 use crate::workspaces::WorkspaceError;
 
@@ -15,6 +16,8 @@ pub enum AppError {
     NotFound,
     #[error("authentication required")]
     Unauthorized,
+    #[error("API authentication required")]
+    ApiUnauthorized,
     #[error("forbidden")]
     Forbidden,
     #[error("internal error")]
@@ -25,6 +28,8 @@ pub enum AppError {
     Workspace(#[from] WorkspaceError),
     #[error(transparent)]
     Task(#[from] TaskError),
+    #[error(transparent)]
+    Idempotency(#[from] IdempotencyError),
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +42,7 @@ impl AppError {
         match self {
             Self::NotFound => (StatusCode::NOT_FOUND, "not found"),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "authentication required"),
+            Self::ApiUnauthorized => (StatusCode::UNAUTHORIZED, "API authentication required"),
             Self::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
             Self::Auth(error) => match error {
@@ -80,6 +86,15 @@ impl AppError {
                     _ => (StatusCode::BAD_REQUEST, "workspace error"),
                 },
                 TaskError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
+            },
+            Self::Idempotency(error) => match error {
+                IdempotencyError::Conflict => (
+                    StatusCode::CONFLICT,
+                    "idempotency key reused for a different request",
+                ),
+                IdempotencyError::Database(_) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+                }
             },
         }
     }

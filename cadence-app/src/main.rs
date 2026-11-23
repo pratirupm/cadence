@@ -1,9 +1,10 @@
 use std::process::ExitCode;
 
 use cadence::auth::AuthService;
-use cadence::cli::{Cli, Command, UserCommand};
+use cadence::cli::{Cli, Command, TokenCommand, UserCommand};
 use cadence::config::Config;
 use cadence::reminders::{ReminderService, run_forever};
+use cadence::tokens::{Scope, TokenService};
 use cadence::{AppState, app, db, telemetry};
 use chrono::Utc;
 use clap::Parser;
@@ -70,6 +71,36 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } => {
                     let user = auth.create_user(&email, &name, &password, verified).await?;
                     println!("{} {}", user.id, user.email);
+                }
+            }
+        }
+        Command::Token { command } => {
+            let pool = db::connect(&database).await?;
+            db::migrate(&pool).await?;
+            let auth = AuthService::new(pool.clone());
+            let tokens = TokenService::new(pool);
+
+            match command {
+                TokenCommand::Create {
+                    email,
+                    name,
+                    scopes,
+                } => {
+                    let user = auth
+                        .find_by_email(&email)
+                        .await?
+                        .ok_or("no account with that email")?;
+                    let scopes = scopes
+                        .iter()
+                        .map(|scope| match scope.as_str() {
+                            "read" => Ok(Scope::Read),
+                            "write" => Ok(Scope::Write),
+                            "admin" => Ok(Scope::Admin),
+                            _ => Err(format!("unknown scope: {scope}")),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let (raw, summary) = tokens.create(&user.id, &name, &scopes, None).await?;
+                    println!("{} {}", summary.id, raw);
                 }
             }
         }
