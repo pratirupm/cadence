@@ -1,0 +1,14 @@
+services:
+  cadence:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      CADENCE_DATABASE: /data/cadence.db
+      RUST_LOG: info
+    volumes:
+      - cadence-data:/data
+    command: ["cadence", "serve", "--bind", "0.0.0.0:3000"]
+
+volumes:
+  cadence-data:

@@ -7,12 +7,11 @@ book-one CLI todo app and turns it into a real service: accounts, workspaces,
 sharing, recurrence, reminders, an API, a CLI sync client, email, webhooks,
 real-time updates, and production operations.
 
-Status: **chapter 21 scaffolded** — accounts, workspaces, roles, private
-projects, tasks, filter DSL, recurrence, reminders, notifications, audit, a
-scoped JSON API, a change log, an offline CLI, SSE, signed webhooks, metrics,
-security headers, and login throttling. Includes CSRF, sessions, optimistic
-versions, soft deletes, migrations, and CI. See [PLAN.md](PLAN.md) for the full
-product, architecture, book outline, coverage, milestones, and risks.
+Status: **chapter 23 scaffolded** — the service, CLI, API, sync, reminders,
+webhooks, SSE, metrics, security hardening, performance indexes, Docker
+packaging, and tested SQLite backups. Includes CSRF, sessions, optimistic
+versions, soft deletes, migrations, tracing, and CI. See [PLAN.md](PLAN.md) for
+the full product, architecture, book outline, coverage, milestones, and risks.
 
 ## Run it
 
@@ -50,6 +49,20 @@ Rust (edition 2024), axum, tokio, SQLx/SQLite, Askama, serde, thiserror,
 tracing, argon2, ULID, chrono, lettre + provider adapter, clap, reqwest.
 Tests with tower, insta, proptest, criterion, wiremock, and paused tokio time.
 
+## Deploy
+
+```console
+$ cd cadence-app
+$ docker compose up --build
+```
+
+The service listens on `:3000` and stores SQLite data in the `cadence-data`
+volume. Migrations run at startup. Back up with:
+
+```console
+$ cargo run -- backup --database cadence.db --output cadence-backup.db
+```
+
 ## Next step
 
-Chapter 2: SQLite, migrations, and the first task repository.
+Chapter 22: performance budgets and query-plan work.

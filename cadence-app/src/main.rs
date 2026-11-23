@@ -44,6 +44,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             db::migrate(&pool).await?;
             tracing::info!(database = %database, "migrations applied");
         }
+        Command::Backup { output } => {
+            let pool = db::connect(&database).await?;
+            sqlx::query("VACUUM INTO ?")
+                .bind(&output)
+                .execute(&pool)
+                .await?;
+            println!("backup written to {output}");
+        }
         Command::Worker { once } => {
             let pool = db::connect(&database).await?;
             db::migrate(&pool).await?;

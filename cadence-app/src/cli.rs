@@ -26,6 +26,11 @@ pub enum Command {
     },
     /// Apply pending database migrations.
     Migrate,
+    /// Write a consistent copy of the database.
+    Backup {
+        #[arg(long)]
+        output: String,
+    },
     /// Run background reminders.
     Worker {
         /// Run one batch and exit.
