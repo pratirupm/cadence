@@ -197,12 +197,20 @@ async fn login(
     State(state): State<AppState>,
     Form(form): Form<LoginForm>,
 ) -> Result<Response, AppError> {
+    if !state.login_limiter.allow(&form.email) {
+        return render(LoginTemplate {
+            error: "Too many attempts. Try again later.".to_owned(),
+        });
+    }
+
     match state.auth.login(&form.email, &form.password).await {
         Ok(session) => {
+            state.login_limiter.clear(&form.email);
             state.metrics.inc(&state.metrics.logins);
             with_session(session, "/app")
         }
         Err(_) => {
+            state.login_limiter.record_failure(&form.email);
             state.metrics.inc(&state.metrics.login_failures);
             render(LoginTemplate {
                 error: "Invalid email or password.".to_owned(),

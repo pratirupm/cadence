@@ -13,6 +13,7 @@ pub mod notifications;
 pub mod query;
 pub mod recurrence;
 pub mod reminders;
+pub mod security;
 pub mod sync;
 pub mod tasks;
 pub mod telemetry;
@@ -38,6 +39,7 @@ use crate::auth::AuthService;
 use crate::error::AppError;
 use crate::events::EventBus;
 use crate::metrics::Metrics;
+use crate::security::LoginLimiter;
 use crate::tasks::TaskService;
 use crate::tokens::TokenService;
 use crate::webhooks::WebhookService;
@@ -53,6 +55,7 @@ pub struct AppState {
     pub webhooks: WebhookService,
     pub events: EventBus,
     pub metrics: Arc<Metrics>,
+    pub login_limiter: Arc<LoginLimiter>,
 }
 
 impl AppState {
@@ -65,6 +68,7 @@ impl AppState {
             webhooks: WebhookService::new(pool.clone()),
             events: EventBus::new(256),
             metrics: Arc::new(Metrics::default()),
+            login_limiter: Arc::new(LoginLimiter::default()),
             pool,
         }
     }
@@ -88,6 +92,7 @@ pub fn app(state: AppState) -> Router {
             state.metrics.clone(),
             count_requests,
         ))
+        .layer(middleware::from_fn(security::headers))
         .with_state(state)
 }
 
