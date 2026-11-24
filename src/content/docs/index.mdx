@@ -1,0 +1,65 @@
+---
+title: Cadence
+description: Build a multi-user task service in Rust, from a CLI to production.
+template: splash
+hero:
+  tagline: The todo app grows up. Build a multi-user task service in Rust.
+  actions:
+    - text: Start reading
+      link: /start/why-this-book/
+      icon: right-arrow
+    - text: See what you will build
+      link: /start/what-you-will-build/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Book one built a todo app for the terminal with a test before every behavior and a
+Git commit after every working step. This book keeps the habit and changes the
+boundary. The same task domain becomes a service: accounts, workspaces, recurring
+tasks, reminders, an API, a sync client, webhooks, and a deployment.
+
+You do not need to have finished book one if you know Rust ownership, structs,
+enums, traits, `Result`, tests, and Cargo. A short recap is in the appendix.
+
+<CardGrid stagger>
+	<Card title="Real service" icon="rocket">
+		Axum, SQLite, sessions, roles, background workers, and a JSON API. The
+		app runs, not just compiles.
+	</Card>
+	<Card title="Hard problems" icon="puzzle">
+		Recurrence across DST, a filter DSL, optimistic concurrency, sync
+		conflicts, signed webhooks, and queue retries.
+	</Card>
+	<Card title="Production habits" icon="approve-check">
+		Tests at every layer, health and metrics, migrations, backups, graceful
+		shutdown, and a capstone run.
+	</Card>
+</CardGrid>
+
+## What you build
+
+A task service called Cadence:
+
+```console
+$ cadence serve
+$ cadence worker
+$ cadence migrate
+$ cadence user create --email you@example.com --name You \
+    --password "correct horse battery staple" --verified
+$ cadence-cli sync
+```
+
+The browser has workspaces, projects, tasks, filters, and live updates. The API
+has scoped tokens and idempotent creates. The CLI works offline and resolves
+conflicts. The worker delivers reminders and webhooks.
+
+## How it is taught
+
+Every chapter starts with a behavior, shows the failing test or the contract,
+builds the smallest implementation, then explains the failure modes. The code is
+the reference; the prose explains why it is shaped that way.
+
+Ready? [Find out what you are getting into](/start/why-this-book/), or
+[set up your workbench](/start/setup/).

@@ -2,6 +2,12 @@
 /target
 **/target
 
+# Site build output and dependencies
+/dist
+/.astro
+/node_modules
+/.playwright-mcp
+
 # Local databases and data
 *.db
 *.db-shm

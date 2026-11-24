@@ -1,0 +1,110 @@
+/* 0xProto is the whole book: prose, headings, navigation, and code. */
+:root {
+	--sl-font: '0xProto', ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+	--sl-font-mono: '0xProto', ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+
+	/* Mono runs wide. Keep the measure near 70 characters. */
+	--sl-content-width: 46rem;
+	--sl-text-base: 1.0625rem;
+	--sl-text-code: 0.9375rem;
+	--sl-line-height: 1.72;
+	--sl-line-height-headings: 1.18;
+
+	/* A warm rust accent, not the default Starlight blue. */
+	--sl-color-accent-low: hsl(16, 42%, 22%);
+	--sl-color-accent: hsl(16, 82%, 64%);
+	--sl-color-accent-high: hsl(16, 90%, 87%);
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: hsl(16, 85%, 92%);
+	--sl-color-accent: hsl(16, 80%, 46%);
+	--sl-color-accent-high: hsl(16, 75%, 30%);
+}
+
+body {
+	letter-spacing: -0.006em;
+}
+
+/* Beginners should see ->, =>, and != exactly as typed. */
+code,
+pre,
+kbd,
+samp {
+	font-variant-ligatures: none;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4) {
+	letter-spacing: -0.02em;
+}
+
+.sl-markdown-content :is(p, li) {
+	max-width: 68ch;
+}
+
+.sl-markdown-content table {
+	font-size: var(--sl-text-sm);
+}
+
+::selection {
+	background: var(--sl-color-accent);
+	color: var(--sl-color-bg);
+}
+
+/* Terminal blocks: a calmer shell, with readable command and status lines. */
+:root {
+	--console-command: hsl(16, 82%, 72%);
+	--console-error: #ff8a80;
+	--console-warning: #ffd479;
+	--console-success: #8be9a8;
+}
+
+:root[data-theme='light'] {
+	--console-command: hsl(16, 75%, 38%);
+	--console-error: #b42318;
+	--console-warning: #8a5a00;
+	--console-success: #1f6f43;
+}
+
+.expressive-code .frame.is-terminal pre {
+	background: #17181c;
+}
+
+:root[data-theme='light'] .expressive-code .frame.is-terminal pre {
+	background: #faf7f2;
+}
+
+.expressive-code .frame.is-terminal .ec-line.console-command {
+	background: color-mix(in srgb, var(--console-command) 8%, transparent);
+}
+
+.expressive-code .frame.is-terminal .ec-line .code span {
+	transition: color 120ms ease;
+}
+
+.expressive-code .frame.is-terminal .ec-line.console-command .code > span:first-child {
+	color: var(--console-command) !important;
+}
+
+.expressive-code .frame.is-terminal .ec-line.console-error .code span {
+	color: var(--console-error) !important;
+}
+
+.expressive-code .frame.is-terminal .ec-line.console-warning .code span {
+	color: var(--console-warning) !important;
+}
+
+.expressive-code .frame.is-terminal .ec-line.console-success .code span {
+	color: var(--console-success) !important;
+}
+
+/* The terminal window dots, in their usual traffic-light colors. */
+.expressive-code .frame.is-terminal .header::before {
+	background:
+		radial-gradient(circle at 0.28rem 50%, #ff5f57 0 0.26rem, transparent 0.27rem),
+		radial-gradient(circle at 1.05rem 50%, #febc2e 0 0.26rem, transparent 0.27rem),
+		radial-gradient(circle at 1.82rem 50%, #28c840 0 0.26rem, transparent 0.27rem);
+	opacity: 1;
+	-webkit-mask-image: none;
+	mask-image: none;
+}

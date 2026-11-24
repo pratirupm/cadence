@@ -2,19 +2,29 @@
 
 **The Todo App Grows Up: build a multi-user task service in Rust.**
 
-Cadence is the project for book two of *Learn Rust with Tests*. It takes the
-book-one CLI todo app and turns it into a real service: accounts, workspaces,
-sharing, recurrence, reminders, an API, a CLI sync client, email, webhooks,
-real-time updates, and production operations.
+Cadence is book two of *Learn Rust with Tests*. It takes the book-one CLI todo
+app and turns it into a real service: accounts, workspaces, sharing, recurrence,
+reminders, an API, a CLI sync client, email, webhooks, real-time updates, and
+production operations.
 
-Status: **complete draft** — the full service, CLI, API, sync, reminders,
-webhooks, SSE, metrics, security hardening, performance indexes, Docker
-packaging, tested SQLite backups, and 24 full chapters in
-[book/](book/README.md). Includes CSRF, sessions, optimistic versions, soft
-deletes, migrations, tracing, and CI. See [PLAN.md](PLAN.md) for the full
-product, architecture, coverage, milestones, and risks.
+Status: **complete draft** — 24 chapters, the Astro/Starlight book site, the full
+reference service, 79 Rust tests, Docker packaging, and tested SQLite backups.
+See [PLAN.md](PLAN.md) for the product plan and known scope.
 
-## Run it
+## Book
+
+```console
+$ bun install
+$ bun run dev
+$ bun run build
+$ bun run check
+$ bun run links
+```
+
+The chapters live in `src/content/docs/`. The site uses Astro Starlight, 0xProto,
+terminal syntax highlighting, and no reader-facing reference app.
+
+## App
 
 ```console
 $ cd cadence-app
@@ -26,29 +36,25 @@ $ curl http://127.0.0.1:3000/health
 {"status":"ok"}
 ```
 
-## Shape
-
-The app starts as one `cadence` package. Crates split out only when a chapter
-needs them:
-
-- `cadence` — axum server, MPA, JSON API, workers
-- later: `domain`, `store`, `web`, `api`, `worker`, `cli`, `mailer`
-- One binary, modes growing from `serve`: `worker`, `migrate`, `user`, `backup`
+The app is one `cadence` package with modules, a server binary, and a separate
+`cadence-cli` sync binary. Modes: `serve`, `migrate`, `backup`, `worker`,
+`user`, `token`, `reminder`.
 
 ## Principles
 
 - Tests first, failure first, one behaviour at a time.
-- Server-rendered MPA; no frontend framework, no HTMX, no npm.
+- Server-rendered MPA; no frontend framework, no HTMX, no app npm build.
 - SQLite only; WAL and explicit migrations.
 - Build the application engine; do not reimplement tokio or an HTTP framework.
 - Every background job is idempotent and observable.
-- Every chapter ends with a runnable demo and a failing test for the next step.
+- Every chapter ends with a runnable checkpoint.
 
 ## Stack
 
 Rust (edition 2024), axum, tokio, SQLx/SQLite, Askama, serde, thiserror,
-tracing, argon2, ULID, chrono, lettre + provider adapter, clap, reqwest.
-Tests with tower, insta, proptest, criterion, wiremock, and paused tokio time.
+tracing, argon2, ULID, chrono, chrono-tz, clap, reqwest, hmac.
+Tests: unit, repository, HTTP (`tower`), CLI primitives, and manual transport
+checks. The book site uses Astro Starlight and Bun.
 
 ## Deploy
 
@@ -58,7 +64,7 @@ $ docker compose up --build
 ```
 
 The service listens on `:3000` and stores SQLite data in the `cadence-data`
-volume. Migrations run at startup. Back up with:
+volume. Back up with:
 
 ```console
 $ cargo run -- backup --database cadence.db --output cadence-backup.db
@@ -66,4 +72,5 @@ $ cargo run -- backup --database cadence.db --output cadence-backup.db
 
 ## Next step
 
-Chapter 22: performance budgets and query-plan work.
+Editorial and clean-room verification of the final manuscript, then publish the
+site.
