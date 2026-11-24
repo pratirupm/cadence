@@ -44,7 +44,7 @@ is still the source of truth. The log is a replication aid that can be rebuilt
 from the task table if it is lost (at the cost of history).
 
 A `seq` is an integer assigned by SQLite’s `AUTOINCREMENT`. It is monotonic, not
-gapless. A rolled-back insert can leave a gap. Clients must use `>` and a stored
+gapless. Deleting the highest row can leave a gap in later values. Clients must use `>` and a stored
 cursor, not assume the next value is `cursor + 1`.
 
 The sequence is global across workspaces, not per workspace. A client that
@@ -360,8 +360,8 @@ null, it is a restore. Decide how restore should appear and test it.
 committed, or used `>=` instead of `>`. The cursor must be the last applied
 sequence and the query must be strictly greater.
 
-**A client sees gaps.** Gaps are normal. `AUTOINCREMENT` can skip values after a
-rollback. Do not loop “until cursor + 1.”
+**A client sees gaps.** Gaps are normal. `AUTOINCREMENT` never reuses a value,
+including after a deleted maximum. Do not loop “until cursor + 1.”
 
 **A client sees another workspace’s change.** The pull join is missing or uses
 the wrong user ID. The log itself is global; the membership join is the

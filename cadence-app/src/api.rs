@@ -7,7 +7,7 @@ use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header, request::Parts};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{delete, get};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_stream::StreamExt;
@@ -98,6 +98,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/workspaces/{workspace_id}/webhooks",
             get(list_webhooks).post(create_webhook),
+        )
+        .route(
+            "/api/v1/workspaces/{workspace_id}/webhooks/{id}",
+            delete(delete_webhook),
         )
 }
 
@@ -194,6 +198,23 @@ async fn create_webhook(
             "events": webhook.events.split(',').collect::<Vec<_>>(),
         })),
     ))
+}
+
+async fn delete_webhook(
+    State(state): State<AppState>,
+    user: ApiUser,
+    Path((workspace_id, id)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    user.require(Scope::Admin)?;
+    if state
+        .webhooks
+        .delete(&user.user_id, &workspace_id, &id)
+        .await?
+    {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Ok(StatusCode::NOT_FOUND)
+    }
 }
 
 async fn push_sync(

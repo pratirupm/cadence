@@ -150,6 +150,71 @@ async fn rejects_missing_and_scopeless_tokens() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn admin_tokens_can_create_and_delete_webhooks() {
+    let (router, state, _token, workspace, _project) = fixture().await;
+    let user = state
+        .auth
+        .find_by_email("api@example.com")
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    let (admin, _) = state
+        .tokens
+        .create(&user, "admin", &[Scope::Admin], None)
+        .await
+        .unwrap();
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/workspaces/{workspace}/webhooks"))
+                .header(header::AUTHORIZATION, format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    "{\"url\":\"https://example.com/hook\",\"events\":[\"task.created\"]}",
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = body_text(response).await;
+    let id = serde_json::from_str::<serde_json::Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/workspaces/{workspace}/webhooks/{id}"))
+                .header(header::AUTHORIZATION, format!("Bearer {admin}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/workspaces/{workspace}/webhooks"))
+                .header(header::AUTHORIZATION, format!("Bearer {admin}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body_text(response).await, "[]");
+}
+
 async fn body_text(response: axum::response::Response) -> String {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     String::from_utf8(bytes.to_vec()).unwrap()

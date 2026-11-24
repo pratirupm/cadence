@@ -362,7 +362,8 @@ ReminderService -> &dyn Mailer -> ProviderMailer -> HTTPS API
 
 The reminder service does not know the provider’s response codes. The adapter
 maps them to `MailError::Send` and logs the details. Chapter 19 applies the same
-pattern to webhooks; chapter 23 configures the provider in deployment.
+pattern to webhooks; provider selection and credentials remain a production
+exercise, not part of this chapter’s code.
 
 ## Tests
 
@@ -371,13 +372,13 @@ The mailer has two tests:
 - `records_messages_for_tests`: the fake captures the exact message.
 - `reset_email_contains_the_token`: the reset body contains `/reset/<token>`.
 
-The notification service has one integration test:
+The notification service has one module test:
 
 - `creates_lists_and_reads_notifications`: two creates, unread count 2, list
   length 2, first mark read returns true, unread count 1, second mark read
   returns false.
 
-The reminder integration test from chapter 10 also proves the combined path:
+The combined reminder test from chapter 10 also proves the delivery path:
 
 - `sends_email_and_in_app_notification_together`: one email captured, one unread
   notification.
@@ -396,7 +397,7 @@ double is a value.
 ## Checkpoint
 
 ```console
-$ cargo test mailer notifications reminders
+$ cargo test mailer && cargo test notifications && cargo test reminders
 $ cargo run -- worker --once
 $ cargo test
 $ cargo fmt --check

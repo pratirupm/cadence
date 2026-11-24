@@ -51,7 +51,8 @@ The design answers them in order:
 - passwords have a minimum length and a hard validation error
 
 There is no “forgot password” email yet. The service issues the token; the mail
-adapter arrives in chapter 11. Until then, the CLI and tests can carry the token.
+adapter arrives in chapter 11. Until then, the tests can carry the token; the
+CLI does not expose a verify/reset command.
 
 ## The schema
 
@@ -91,12 +92,10 @@ CREATE TABLE auth_tokens (
 CREATE INDEX auth_tokens_user_id_idx ON auth_tokens (user_id);
 ```
 
-The `email` uniqueness constraint is the database’s promise. The service also
-checks for a duplicate before inserting, but two concurrent signups could both
-pass that check. Only the unique index can settle the race. That is why
-`create_user` maps a unique violation to `EmailTaken` instead of trusting the
-pre-check alone. In this chapter the service does not do a separate pre-check;
-it inserts and classifies the database error.
+The `email` uniqueness constraint is the database’s promise. The service does
+not rely on a read-before-write duplicate check, because two concurrent signups
+could both pass it. `create_user` inserts and classifies the database’s unique
+violation as `EmailTaken`. The index is what settles the race.
 
 `sessions.id` stores the **hash** of the session token, not the token. The
 column name is `id` because a session is identified by its verifier; the raw

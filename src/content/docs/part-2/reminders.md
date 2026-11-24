@@ -278,7 +278,7 @@ call `run_once_with` with `RecordingMailer` so they can assert the message.
 `run_forever` is the loop:
 
 ```rust
-let mut ticker = tokio::time::interval(Duration::from_secs(30));
+let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(30));
 loop {
     ticker.tick().await;
     if let Err(error) = service.run_once(Utc::now(), 50).await {
@@ -406,8 +406,9 @@ $ cargo fmt --check
 $ cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-The worker command needs a reminder in the database. Use the CLI from chapter 15
-or a test fixture; this chapter’s checkpoint is the batch behavior.
+The worker command needs a reminder in the database. Use
+`cadence reminder create` (shown in the capstone) or a test fixture; this
+chapter’s checkpoint is the batch behavior.
 
 ## Failure modes you will meet
 
@@ -432,7 +433,8 @@ clock did not advance. In production, a row with a far-future `remind_at` is
 correctly not due.
 
 **`worker --once` prints 1 but no email arrived.** The default `LogMailer` logs
-the message instead of sending it. Chapter 11 adds a real provider adapter.
+the message instead of sending it. Chapter 11 adds the mailer seam; a real
+provider adapter is an exercise, not shipped code.
 
 **The worker loops too fast.** `tokio::time::interval` ticks immediately once,
 then every 30 seconds. The first immediate tick is intentional. Add jitter if

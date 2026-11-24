@@ -68,8 +68,7 @@ pub async fn set_recurrence(
     Recurrence::parse(rrule, timezone, starts_at)?;
 
     let task = self.find(id).await?;
-    self.require_write(&task.workspace_id, actor_id).await?;
-    self.require_project_access(actor_id, &task.workspace_id, &task.project_id)
+    self.require_project_write(actor_id, &task.workspace_id, &task.project_id)
         .await?;
 
     let result = sqlx::query(
@@ -117,8 +116,7 @@ permissions, and performs the versioned update:
 ```rust
 let task = self.find(id).await?;
 let was_completed = task.completed;
-self.require_write(&task.workspace_id, actor_id).await?;
-self.require_project_access(...).await?;
+self.require_project_write(actor_id, &task.workspace_id, &task.project_id).await?;
 
 let result = sqlx::query(
     "UPDATE tasks
@@ -304,8 +302,8 @@ The policy is easiest to see with a daily task that starts at 09:00 UTC.
 Completing early is the subtle row. The task is not due yet, but the user has
 done it. `after = starts_at` and `next_after` is strict, so the engine returns
 the next occurrence, not the one being completed. A naive `after = now` would
-also work for a future start, but it would be wrong for an occurrence that is
-already past by a few seconds.
+return `starts_at` itself when the task is completed before it is due—the
+occurrence being completed. Once the start is in the past, `now` is safe.
 
 The skipped-days row is the policy choice. The user sees one open task for
 tomorrow, not four overdue tasks. If the product wants a backlog, it must ask
@@ -328,7 +326,7 @@ is why the `series_id` exercise exists.
 
 ## Tests
 
-The task suite has two recurrence integration tests:
+The task module has two recurrence tests:
 
 - `completing_a_recurring_task_creates_the_next_occurrence`: creates a task,
   sets `FREQ=DAILY` with a start one hour in the future, completes it, and

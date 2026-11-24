@@ -42,7 +42,6 @@ The service now needs to know:
 - which workspace and project own it
 - who created it and who it is assigned to
 - notes, priority, and an optional due date
-- an optional recurrence rule and time zone
 - a version for conflict detection
 - whether it is deleted
 
@@ -98,8 +97,6 @@ pub struct Task {
     pub completed: bool,
     pub priority: i64,
     pub due_at: Option<DateTime<Utc>>,
-    pub recurrence: Option<String>,
-    pub recurrence_timezone: Option<String>,
     pub created_by: String,
     pub assigned_to: Option<String>,
     pub version: i64,
@@ -111,7 +108,8 @@ pub struct Task {
 
 `Serialize` is here because the JSON API returns this type. `FromRow` maps the
 columns. The `Option` fields are honest: a task may have no due date, no
-assignee, no recurrence, and not be deleted.
+assignee, and not be deleted. Chapter 9 adds the recurrence fields; the type and
+the migration grow together.
 
 Do not use empty strings for “no due date” or `0` for “unassigned.” Empty values
 are indistinguishable from real empty values and force every consumer to know
@@ -139,10 +137,6 @@ pub enum TaskError {
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
     #[error(transparent)]
-    Query(#[from] QueryError),
-    #[error(transparent)]
-    Recurrence(#[from] RecurrenceError),
-    #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
 ```
@@ -152,22 +146,23 @@ under you is `Conflict`. They map to different HTTP statuses and different UI
 messages. Do not collapse them into “not found” to avoid a branch. The client
 needs to know whether to reload or to create.
 
-`Workspace`, `Query`, and `Recurrence` are transparent wrappers. The service can
-use `?` on a workspace permission check, a filter parse, or a recurrence rule
-without translating every variant. `Error` keeps the chain for logs.
+`Workspace` is a transparent wrapper. The service can use `?` on a workspace
+permission check without translating every variant; `Error` keeps the chain for
+logs. Chapters 7 and 9 add `Query` and `Recurrence` variants as those modules
+arrive.
 
 ## Authorization before data
 
 Every public method begins with the same two checks:
 
 ```rust
-self.require_write(workspace_id, actor_id).await?;
-self.require_project_access(actor_id, workspace_id, project_id).await?;
+self.require_project_write(actor_id, workspace_id, project_id).await?;
 ```
 
-The first asks “is this user allowed to write in this workspace?” The second
-asks “can this user see this project?” They are separate because a workspace
-member may be a viewer or may be excluded from a private project.
+`require_project_write` first calls `require_project_access` (the read check),
+then asks `can_write_project`. The two questions are separate: a viewer may read
+a project and not write it, and a workspace member may be excluded from a private
+project entirely. Chapter 12 adds the project-role branch to the write check.
 
 `require_project_access` in this chapter is:
 
@@ -206,8 +201,7 @@ pub async fn create(
     title: &str,
 ) -> Result<Task, TaskError> {
     let title = normalize_title(title)?;
-    self.require_write(workspace_id, actor_id).await?;
-    self.require_project_access(actor_id, workspace_id, project_id).await?;
+    self.require_project_write(actor_id, workspace_id, project_id).await?;
 
     let now = Utc::now();
     let task = Task {
@@ -219,8 +213,6 @@ pub async fn create(
         completed: false,
         priority: 0,
         due_at: None,
-        recurrence: None,
-        recurrence_timezone: None,
         created_by: actor_id.to_owned(),
         assigned_to: None,
         version: 1,
@@ -251,8 +243,7 @@ The default list is:
 
 ```sql
 SELECT id, workspace_id, project_id, title, notes, completed, priority, due_at,
-       recurrence, recurrence_timezone, created_by, assigned_to, version,
-       created_at, updated_at, deleted_at
+       created_by, assigned_to, version, created_at, updated_at, deleted_at
 FROM tasks
 WHERE project_id = ? AND deleted_at IS NULL
 ORDER BY completed, created_at DESC, id DESC
@@ -321,8 +312,7 @@ Rename and completion are the same shape:
 
 ```rust
 let task = self.find(id).await?;
-self.require_write(&task.workspace_id, actor_id).await?;
-self.require_project_access(...).await?;
+self.require_project_write(actor_id, &task.workspace_id, &task.project_id).await?;
 
 let result = sqlx::query(
     "UPDATE tasks SET title = ?, version = version + 1, updated_at = ?
@@ -346,9 +336,8 @@ Returning the reloaded task gives the caller the new version. The client needs
 that version for its next edit. Returning `()` would force a second request and
 create another race.
 
-Completion calls `create_next_occurrence` when the task has a recurrence rule.
-That is chapter 9; the hook is here so the completion contract does not change
-later. A recurring task is completed once and the next occurrence is a new row.
+Completion is the same versioned update. Chapter 9 adds recurrence and creates
+the next occurrence only on an open-to-done transition.
 
 Delete is a soft delete:
 
@@ -367,38 +356,6 @@ book does not add that job, but the design leaves room.
 list. If the UI needs the title for a flash message, it already had it. Keep the
 return type honest.
 
-## The sync update hook
-
-`apply_sync_update` is a variant for the CLI:
-
-```rust
-pub async fn apply_sync_update(
-    &self,
-    actor_id: &str,
-    id: &str,
-    title: Option<&str>,
-    completed: Option<bool>,
-    base_version: i64,
-) -> Result<Task, TaskError> {
-    let task = self.find(id).await?;
-    // authorization ...
-    if task.version != base_version {
-        return Err(TaskError::Conflict);
-    }
-    // UPDATE with COALESCE(?, title), COALESCE(?, completed)
-}
-```
-
-It accepts partial fields because a sync operation may only change one of them.
-`COALESCE(?, title)` means “keep the old value when the parameter is null.” The
-version check is explicit before the update and repeated in the `WHERE` clause.
-The first check produces a `Conflict` before any write; the second protects
-against a race between the check and the update.
-
-`set_recurrence` is another version-checked mutation. It validates the rule
-before writing, so an invalid recurrence never reaches the table. That method is
-chapter 9’s entry point; the authorization pattern is identical.
-
 ## Tests
 
 The task suite uses a fixture that creates a user, workspace, and project
@@ -411,21 +368,18 @@ async fn fixture() -> Fixture {
 }
 ```
 
-Nine tests currently cover the task contract:
+The final task suite has ten tests. At this checkpoint the core six exist:
 
 - `creates_and_lists_tasks_in_a_project`: creation, version 1, list.
 - `trims_titles_and_rejects_empty_ones`: validation before insert.
-- `completes_reopens_and_renames_a_task`: version increments 1 → 2 → 3.
+- `completes_reopens_and_renames_a_task`: version increments 1 → 2 → 3 → 4.
 - `soft_deletes_a_task`: `get` returns `NotFound`, list is empty.
 - `viewers_cannot_change_tasks`: read allowed, write forbidden.
-- `private_projects_require_project_membership`: no access until project member.
-- `filters_tasks_with_the_query_language`: chapter 7 at the service boundary.
 - `outsiders_cannot_read_the_project`: no membership, no list.
-- `completing_a_recurring_task_creates_the_next_occurrence`: chapter 9.
 
-At the chapter-5 checkpoint, the recurrence and filter tests may not exist yet.
-The important assertions are the first six. They prove the authorization and
-concurrency contract, not the query language.
+Later chapters add private-project access, filter queries, recurring completion,
+and the double-completion guard. The first six prove the authorization and
+concurrency contract; they are the checkpoint.
 
 Run:
 
@@ -456,9 +410,10 @@ authorize on the row.
 Reload the task, show the current values, and let the user retry. Do not
 automatically overwrite; that defeats the version.
 
-**A viewer gets `Forbidden` on a read.** Reads call `require_member`, not
-`require_write`. If a viewer is forbidden on a read, the code used the wrong
-helper or the project is private and the viewer is not a project member.
+**A viewer gets `Forbidden` on a read.** Reads call `require_member` and
+`require_project_access`; writes call `require_project_write`. If a viewer is
+forbidden on a read, the code used the write helper or the project is private and
+the viewer is not a project member.
 
 **A deleted task still appears.** The list query filters `deleted_at IS NULL`;
 the detail query must too. A soft delete is only soft if every read agrees.
@@ -468,8 +423,7 @@ compares the project’s workspace to the claimed one. Without it, a caller can
 use a workspace they own and a project they should not touch.
 
 **The version jumps by two.** A method called `find` and then another method that
-also increments, or a recurrence inserted a second row. Trace the mutations;
-each public write should increment once.
+also increments. Trace the mutations; each public write should increment once.
 
 **`rows_affected() == 0` is treated as `NotFound`.** The row was loaded, so the
 likely cause is a version mismatch. Return `Conflict` and test the two-client

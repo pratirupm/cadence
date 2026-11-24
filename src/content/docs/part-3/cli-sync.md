@@ -22,7 +22,7 @@ By the end of this chapter you can:
 - resolve a conflict by keeping the local or server version
 - explain the limits: no offline create, no offline delete, one page per sync
 
-The Rust lessons are a second binary, two SQLite databases in one program,
+The Rust lessons are a second binary, two SQLite databases in the system (one per process),
 `reqwest`, cursor storage, and a content-addressed operation ID. The product
 lesson is that offline editing is a local state machine, not a cache with a
 refresh button.
@@ -244,9 +244,9 @@ x 01J...  call dentist  (v2)
 ```
 
 A local rename is not validated against the server’s title length or other
-rules. The push can fail with a 400; the local row stays dirty. A future form
-should validate locally with the same rules, but the server is still the
-authority.
+rules. The push operation can return a per-operation sync error; the local row
+stays dirty. A future form should validate locally with the same rules, but the
+server is still the authority.
 
 ## Push
 
@@ -386,7 +386,6 @@ The sync path is verified manually against a running server:
 $ cargo run --bin cadence-cli -- --local /tmp/cadence-local.db \
     --server http://127.0.0.1:3000 --token "$TOKEN" sync
 pulled 1 change(s) to cursor 1
-  01J...  buy milk  (v1)
 $ cargo run --bin cadence-cli -- --local /tmp/cadence-local.db list
   01J...  buy milk  (v1)
 $ cargo run --bin cadence-cli -- --local /tmp/cadence-local.db rename 01J... "buy oat milk"
@@ -447,9 +446,8 @@ or implement the loop in exercise 1.
 There is no local create ID mapping or server create endpoint in the batch. The
 exercise asks for it.
 
-**A deleted local task stays deleted on the server.** `push` filters
-`deleted = 0`, and there is no delete operation. Deletes are not offline-capable
-yet.
+**A local delete does not reach the server.** `push` filters `deleted = 0`, and
+there is no delete operation. Deletes are not offline-capable yet.
 
 ## Under the hood
 

@@ -143,7 +143,7 @@ The raw token is shown once. Use it:
 $ export TOKEN='cad_...'
 $ curl -s -H "Authorization: Bearer $TOKEN" \
     http://127.0.0.1:3000/api/v1/me
-{"user_id":"...","scopes":["read","write"]}
+{"scopes":["read","write"],"user_id":"..."}
 ```
 
 List the project’s tasks:

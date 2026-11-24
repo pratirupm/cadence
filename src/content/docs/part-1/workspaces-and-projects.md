@@ -42,7 +42,7 @@ A user can belong to many workspaces. A workspace can have many members. Every
 workspace has at least one owner. A project belongs to exactly one workspace. A
 task will belong to a project, and therefore to a workspace.
 
-The first two roles are workspace-level:
+The four roles are workspace-level:
 
 - **owner**: everything, including assigning another owner
 - **admin**: manage members, projects, and content
@@ -325,10 +325,10 @@ WHERE p.workspace_id = ? AND p.archived_at IS NULL
 ORDER BY p.created_at, p.id
 ```
 
-The `EXISTS` subquery is the private-project rule. An owner or admin will also
-see private projects through `can_access_project`, which is a separate check
-used by tasks. The list and the access check must agree; chapter 12 tests that
-they do.
+That query is the non-manager branch. An owner or admin takes a simpler branch
+that lists every project in the workspace. The list and `can_access_project`,
+which tasks use, must agree; the workspace test checks that an owner sees the
+private project too.
 
 Do not fetch all projects and filter in Rust. That leaks existence through
 timing and makes pagination harder. Put the rule in SQL and test it.
@@ -409,8 +409,9 @@ pub async fn invite(
 }
 ```
 
-The raw token is returned to the caller. The email adapter in chapter 11 will
-send it; tests can consume it directly. The token is not stored raw.
+The raw token is returned to the caller. Chapter 11 adds the mailer seam, but
+invitation email delivery is not wired yet; tests consume the token directly.
+The token is not stored raw.
 
 Acceptance checks the signed-in user’s email:
 
@@ -491,9 +492,9 @@ Six tests cover the chapter:
   success, second use fails.
 - `viewers_cannot_add_members`: manage permission.
 
-The private-project test inserts a project member directly in the current suite;
-chapter 12 adds the service method. The assertion is what matters: a private
-project is invisible until membership exists.
+The private-project test adds a project member through `add_project_member`.
+The assertion is what matters: a private project is invisible until membership
+exists.
 
 Run:
 
@@ -519,8 +520,9 @@ before the UI appears, which is the point.
 ## Failure modes you will meet
 
 **A workspace has no owner.** Creation wrote the workspace but not the member
-row. Use one transaction and test the rollback. The schema has no constraint
-that enforces “at least one owner”; the service does.
+row. Use one transaction and test the rollback. Creation enforces the invariant;
+a later demotion can still remove the last owner, which is exercise 1. The schema
+has no constraint for “at least one owner.”
 
 **Two workspaces have the same slug.** The unique index refused one insert, or
 the check-then-insert race lost. Catch the unique violation and retry with the

@@ -136,8 +136,8 @@ conflates “you do not belong” with “the URL is bad.” A caller receives a
 instead of a 403. The exercise asks you to add a `NotMember` or reuse the
 workspace error. The behavior is safe; the message is misleading.
 
-Only an owner or admin can manage webhooks. A member cannot register an endpoint
-that receives workspace data. A viewer cannot list them either.
+Only an owner or admin can create or delete a webhook. A member can list them
+but cannot register an endpoint that receives workspace data; a viewer cannot.
 
 The raw secret is returned in the API response once:
 
@@ -146,7 +146,8 @@ The raw secret is returned in the API response once:
 ```
 
 The list endpoint omits the secret. There is no rotate endpoint yet; deleting and
-recreating is the rotation path, which means the receiver must update its secret.
+recreating is the rotation path. The API exposes `DELETE` for a hook; the receiver
+must update its secret before the next delivery.
 
 ## URL validation is security
 
@@ -219,7 +220,7 @@ for webhook in webhooks {
 The events string is a small filter. A better schema uses a join table or a JSON
 array with a containment query; for three event names, a comma list is enough.
 
-`dispatch` is called after web/API task creation, completion, and deletion. It is
+`dispatch` is called after web create/toggle/delete and API create. It is
 not called from sync push, for the same reason SSE is not: the sync path does not
 publish. The change log is the only place that sees every task change. A robust
 design dispatches from an outbox fed by the change log, not from each handler.
@@ -291,9 +292,9 @@ constants are a policy, not a protocol.
 
 `deliver_due` has no claim. Two workers can select the same pending row and both
 send it. The receiver may see duplicates even without a retry. The fix is a
-`sending` state with a lease, exactly like reminders. The current design is
-single-worker in `main`, but “we run one worker” is a deployment assumption, not
-a correctness guarantee.
+`sending` state with a lease, like reminders’ sending state—except reminders also
+lack lease recovery. The current design is single-worker in `main`, but “we run
+one worker” is a deployment assumption, not a correctness guarantee.
 
 `response_body` is never written. The column exists for a delivery log; adding
 it is an exercise. A failed response body can contain secrets or attacker HTML;
@@ -318,12 +319,13 @@ loop {
 The API manages webhooks under `/api/v1/workspaces/{id}/webhooks`:
 
 ```text
-GET  list   requires admin scope
-POST create requires admin scope
+GET    list    requires admin scope; workspace member or higher
+POST   create  requires admin scope; workspace admin
+DELETE delete  requires admin scope; workspace admin
 ```
 
-The create response includes the secret once. The list response does not. Both
-also require a workspace admin role; the token scope is not enough.
+The create response includes the secret once. The list response does not. The
+token scope is not enough; the workspace role is checked too.
 
 ## Delivery states
 
@@ -334,10 +336,10 @@ also require a workspace admin role; the token scope is not enough.
 | `failed` | five failed attempts | terminal |
 | `sending` | not implemented | would mean a worker owns a lease |
 
-`attempts` increments on failure, not on claim, because there is no claim. A
-delivery can be sent twice before it is marked delivered; the state table makes
-that visible. A production queue adds `sending` and `locked_until`, then a
-recovery pass.
+`attempts` increments on every send attempt, including a successful one; there
+is no claim. A delivery can be sent twice before it is marked delivered; the
+state table makes that visible. A production queue adds `sending` and
+`locked_until`, then a recovery pass.
 
 The `response_status` column stores the last status code; `response_body` is
 reserved. A delivery log needs the body, but it also needs a retention policy:

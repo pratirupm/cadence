@@ -290,7 +290,7 @@ confirm the forms still work.
 ## Failure modes you will meet
 
 **The other tab does not refresh.** The stream is not connected: check the
-network panel for `/events`, a 302 to `/login`, or a CSP violation. The script is
+network panel for `/events`, a 303 to `/login`, or a CSP violation. The script is
 only included on `/app`.
 
 **The tab reloads repeatedly.** Every event schedules a reload, and the reload
@@ -304,7 +304,7 @@ does not reconnect. Remove the close and add backoff.
 `script-src 'self'` should allow it. Check for an inline script or a different
 origin.
 
-**The stream returns 302.** The session expired. The browser follows the redirect
+**The stream returns 303.** The session expired. The browser follows the redirect
 to `/login`, which is not an event stream. Refresh and log in.
 
 **A task change from the CLI does not refresh the tab.** The sync endpoint does

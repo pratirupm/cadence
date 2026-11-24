@@ -160,7 +160,7 @@ The order matters:
 The `EXISTS`/`LIMIT 1` query is a boolean. It does not need the role; read access
 is the same for editor and viewer. Write access is a separate check.
 
-`list_projects` uses the same rule in SQL:
+For non-managers, `list_projects` applies the read rule in SQL:
 
 ```sql
 WHERE p.workspace_id = ? AND p.archived_at IS NULL
@@ -173,10 +173,11 @@ WHERE p.workspace_id = ? AND p.archived_at IS NULL
   )
 ```
 
-The service check and the list query must agree. If the list hides a project the
-detail page allows, users bookmark a page they cannot see in the sidebar. If the
-list shows a project the detail forbids, clicking it gives a 403. Test both
-directions.
+An owner or admin takes a separate branch that lists every project in the
+workspace, matching `can_access_project`. If the list hides a project the detail
+page allows, users bookmark a page they cannot see in the sidebar. If the list
+shows a project the detail forbids, clicking it gives a 403. Test both directions,
+including the owner/admin case.
 
 ## Write access
 
@@ -201,7 +202,8 @@ pub async fn can_write_project(
         return Ok(role.can_write());
     }
 
-    Ok(self.project_role(project_id, user_id).await? == Some(ProjectRole::Editor))
+    Ok(role.can_write()
+        && self.project_role(project_id, user_id).await? == Some(ProjectRole::Editor))
 }
 ```
 

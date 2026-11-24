@@ -292,25 +292,37 @@ impl WorkspaceService {
         actor_id: &str,
         workspace_id: &str,
     ) -> Result<Vec<Project>, WorkspaceError> {
-        self.require_member(workspace_id, actor_id).await?;
+        let role = self.require_member(workspace_id, actor_id).await?;
 
-        let projects = sqlx::query_as::<_, Project>(
-            "SELECT p.id, p.workspace_id, p.name, p.visibility, p.archived_at, p.created_at
-             FROM projects p
-             WHERE p.workspace_id = ? AND p.archived_at IS NULL
-               AND (
-                   p.visibility = 'workspace'
-                   OR EXISTS (
-                       SELECT 1 FROM project_members pm
-                       WHERE pm.project_id = p.id AND pm.user_id = ?
+        let projects = if role.can_manage() {
+            sqlx::query_as::<_, Project>(
+                "SELECT p.id, p.workspace_id, p.name, p.visibility, p.archived_at, p.created_at
+                 FROM projects p
+                 WHERE p.workspace_id = ? AND p.archived_at IS NULL
+                 ORDER BY p.created_at, p.id",
+            )
+            .bind(workspace_id)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, Project>(
+                "SELECT p.id, p.workspace_id, p.name, p.visibility, p.archived_at, p.created_at
+                 FROM projects p
+                 WHERE p.workspace_id = ? AND p.archived_at IS NULL
+                   AND (
+                       p.visibility = 'workspace'
+                       OR EXISTS (
+                           SELECT 1 FROM project_members pm
+                           WHERE pm.project_id = p.id AND pm.user_id = ?
+                       )
                    )
-               )
-             ORDER BY p.created_at, p.id",
-        )
-        .bind(workspace_id)
-        .bind(actor_id)
-        .fetch_all(&self.pool)
-        .await?;
+                 ORDER BY p.created_at, p.id",
+            )
+            .bind(workspace_id)
+            .bind(actor_id)
+            .fetch_all(&self.pool)
+            .await?
+        };
 
         Ok(projects)
     }
@@ -807,6 +819,12 @@ mod tests {
             )
             .await
             .unwrap();
+
+        let owner_view = workspaces
+            .list_projects(&owner, &workspace.id)
+            .await
+            .unwrap();
+        assert_eq!(owner_view.len(), 2);
 
         let visible = workspaces
             .list_projects(&member, &workspace.id)

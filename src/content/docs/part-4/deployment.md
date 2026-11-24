@@ -110,6 +110,7 @@ services:
     build: .
     environment:
       CADENCE_DATABASE: /data/cadence.db
+      RUST_LOG: info
     volumes: [cadence-data:/data]
     command: ["cadence", "migrate"]
     restart: "no"
@@ -161,6 +162,8 @@ The binary reads:
 - `CADENCE_DATABASE` — SQLite path or URL; default `cadence.db`
 - `--bind` — listen address; default `127.0.0.1:3000`
 - `RUST_LOG` — tracing filter; default `info`
+- `CADENCE_PASSWORD` — password for `user create`
+- `CADENCE_SERVER` / `CADENCE_TOKEN` — CLI client configuration
 
 The token secret, SMTP/provider credentials, and any external base URL are not
 configured yet. When you add them, read them from the environment or a mounted
@@ -329,7 +332,7 @@ production gaps are explicit:
 - no `/ready` database check
 - no external log/metrics backend or alerting
 - no shared rate limiter or API token rate limit
-- no worker claim/lease for reminders or webhooks
+- no lease/recovery for in-flight reminders or webhook deliveries
 - no automated backup retention or off-host upload
 - no request IDs or audit IPs
 - no pagination on the task list
@@ -391,7 +394,8 @@ on replacement.
    minimal HTTP client. Wire it to Compose.
 3. **Automate backup retention.** Write a wrapper that timestamps, uploads, and
    deletes old backups. Test the restore of the newest and oldest.
-4. **Add a worker lease.** Before scaling the worker, add a claim/lease so two
+4. **Add lease recovery.** Reminders claim with `sending`, but have no lease
+   timeout; webhooks have no claim at all. Add a lease and recovery pass so two
    workers do not deliver the same reminder or webhook.
 5. **Document a rollback.** Deploy version N+1, then return to N. What happens to
    the database schema? Which migrations are reversible? Write the runbook.

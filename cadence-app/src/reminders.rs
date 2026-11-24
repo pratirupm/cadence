@@ -224,6 +224,13 @@ impl ReminderService {
                 continue;
             };
 
+            tracing::info!(
+                reminder_id = %reminder.id,
+                task_id = %reminder.task_id,
+                user_id = %reminder.user_id,
+                "reminder due"
+            );
+
             let payload = serde_json::json!({
                 "task_id": reminder.task_id,
                 "title": title,

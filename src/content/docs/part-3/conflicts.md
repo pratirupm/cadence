@@ -123,7 +123,7 @@ an unauthorized caller.
 
 ## The push replay
 
-`sync_operations` stores the response per `(op_id, user_id)`:
+`sync_operations` is keyed by `op_id` and filtered by `user_id`:
 
 ```rust
 if let Some(stored) = sqlx::query_scalar::<_, String>(
@@ -316,8 +316,8 @@ local row is ahead. That can happen if a previous push succeeded and the local
 version was advanced but the dirty flag was not cleared. Applying the lower
 server payload would lose the local state. The current code records a conflict
 when `payload.version >= version`, so the lower case falls through to the upsert.
-A stricter client would treat “local ahead” as a repair, not a merge. Exercise 2
-in chapter 15 covers the dirty-flag bug.
+A stricter client would treat “local ahead” as a repair, not a merge; that is a
+useful exercise.
 
 The table is the whole sync decision for a task. If you add fields that can be
 merged, the table gains a “both changed different fields” row and a merge rule.
@@ -360,6 +360,7 @@ conflict on task-01J...-v1-...: run `conflicts` to resolve
 $ cadence-cli ... conflicts
 1  01J...  local: local edit  server(v1): buy milk
 2  01J...  local: local edit  server(v2): buy oat milk
+3  01J...  local: local edit  server(v2): buy oat milk
 $ cadence-cli ... resolve 3 --keep local
 $ cadence-cli ... sync
 pulled 0 change(s) to cursor 2

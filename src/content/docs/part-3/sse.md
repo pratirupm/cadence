@@ -275,7 +275,7 @@ a live hint and a reliable feed. The exercise asks for the first two steps.
 | Event | Published by | Payload | Notes |
 | --- | --- | --- | --- |
 | `task.created` | web/API create | full task | after commit |
-| `task.updated` | web/API toggle | full task | includes new version |
+| `task.updated` | web toggle | full task | includes new version |
 | `task.deleted` | web delete | pre-delete task | soft delete already committed |
 | none | CLI sync | — | known gap |
 
@@ -363,12 +363,12 @@ The stream silently drops the lag error. Reconnect and pull from the change log.
 buffered by the proxy. Disable response buffering for `text/event-stream` and keep
 the interval below the proxy timeout.
 
-**`EventSource` gets 401/302.** The cookie is missing, expired, or `SameSite`
+**`EventSource` gets 401/303.** The cookie is missing, expired, or `SameSite`
 blocks it. Check the browser console and the login redirect.
 
-**The same event appears twice.** The client reconnected and the server replayed
-from a sequence that includes an already-applied change. Dedupe by change `seq`,
-not by payload equality.
+**The same event appears twice.** The client reconnected and a durable replay
+re-sent an already-applied change. That replay does not exist yet; once exercise
+1 adds event IDs, dedupe by the change `seq`, not by payload equality.
 
 **The stream leaks memory.** Each connection holds a receiver and a `HashSet`.
 Close the connection when the client disconnects; axum drops the stream when the

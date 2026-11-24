@@ -58,9 +58,10 @@ implementation is a project. The subset covers the recurring tasks a todo app
 actually needs, and every unsupported key fails loudly instead of being ignored.
 A user who writes `BYSETPOS=1` gets an error, not a silently different schedule.
 
-`WKST` is accepted because some clients send it; ignoring it is safe only because
-the subset does not use week-start-dependent counts. If you add `BYWEEKNO`, you
-must implement it.
+`WKST` is accepted because some clients send it, but the engine ignores it and
+always anchors weekly intervals on Monday. That is equivalent only for the
+default `WKST=MO`; a different week start can change a weekly `INTERVAL` rule.
+Implement `WKST` before claiming full RRULE compatibility.
 
 ## Types
 
@@ -402,9 +403,9 @@ required; there is no sensible default.
 **`invalid recurrence value for INTERVAL: 0`.** An interval of zero would mean
 “every zero days” and loop forever or divide by zero. The parser rejects it.
 
-**A monthly rule never fires.** `BYMONTHDAY=31` in a month without a 31st is
-skipped. If you expected clamping, change the policy and test it; do not assume
-the engine is broken.
+**The occurrence in a short month is skipped.** `BYMONTHDAY=31` has no February
+occurrence. If you expected clamping, change the policy and test it; do not
+assume the engine is broken.
 
 **A daily rule jumps by an hour after DST.** The engine is preserving local wall
 time, which is usually correct. If the task is a fixed interval from an instant
@@ -462,5 +463,6 @@ see and the horizon bounds it. Chapter 22 measures before optimizing.
 
 The engine can answer “when is the next occurrence?” Chapter 9 connects that
 answer to task completion: completing a recurring task creates the next one,
-with the same title, project, priority, assignee, and rule. The transaction and
-version behavior from chapter 5 become part of the calendar contract.
+with the same title, project, priority, assignee, and rule. The version behavior
+from chapter 5 becomes part of the calendar contract; chapter 9 also names the
+transaction gap between completing the old occurrence and inserting the next.

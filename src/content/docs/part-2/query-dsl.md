@@ -242,7 +242,7 @@ let op = if self.consume(&Token::Eq) { Op::Eq }
 Then the text special case:
 
 ```rust
-let op = if field == Field::Text && op == Op::Eq {
+let op = if field == Field::Text && !explicit && op == Op::Eq {
     Op::Contains
 } else {
     op
@@ -251,8 +251,9 @@ let op = if field == Field::Text && op == Op::Eq {
 
 Why special-case text? `text:buy` should search for “buy” inside the title and
 notes, not require the title to equal “buy.” A user who wants exact equality can
-write `text:=buy`; the parser sees the explicit `Eq` before the special case and
-keeps it. That is a small but useful escape hatch.
+write `text:=buy`; the parser records whether an operator was explicit and only
+rewrites the default equality to `Contains`. That is a small but useful escape
+hatch.
 
 Field names are mapped in one place:
 
@@ -394,10 +395,10 @@ let date = NaiveDate::parse_from_str(value, "%Y-%m-%d")
 
 The date is interpreted as UTC midnight. This is a limitation: a user in
 `Asia/Kolkata` asking for “today” gets the UTC day, which may start and end at
-the wrong local times. The task has a `due_timezone`, but the filter compiler
-does not know the viewer’s zone. A production query needs a viewer time zone
-parameter and a local-day range converted to UTC. The chapter keeps the UTC
-contract and makes the limitation explicit; the exercise asks you to thread a
+the wrong local times. A recurring task stores its own zone, but the filter
+compiler does not know the *viewer’s* zone. A production query needs a viewer
+time zone parameter and a local-day range converted to UTC. The chapter keeps
+the UTC contract and makes the limitation explicit; the exercise asks you to thread a
 zone through.
 
 ### Project

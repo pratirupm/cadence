@@ -615,6 +615,14 @@ mod tests {
             .unwrap();
         assert_eq!(renamed.title, "buy oat milk");
         assert_eq!(renamed.version, 3);
+
+        let reopened = fixture
+            .tasks
+            .set_completed(&fixture.owner, &task.id, false)
+            .await
+            .unwrap();
+        assert!(!reopened.completed);
+        assert_eq!(reopened.version, 4);
     }
 
     #[tokio::test]

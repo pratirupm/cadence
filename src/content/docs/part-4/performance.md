@@ -79,7 +79,7 @@ Each index serves a query shape:
   log view. The worker uses the `(status, next_at)` index from chapter 19.
 
 `IF NOT EXISTS` makes the migration idempotent but hides a duplicate. The
-`sessions_expires_at_idx` was already created in chapter 2; this migration’s
+`sessions_expires_at_idx` was already created in chapter 3 (accounts); this migration’s
 line is a no-op. That is harmless, but it is also a sign that a later reader
 cannot tell which index is authoritative. Prefer naming the original migration
 or using a new index name if the definition changes.
@@ -216,7 +216,7 @@ that is the result, not a failure of the test.
 
 Pick targets before measuring:
 
-- task list p95 under 200 ms on a small VM with 10,000 tasks and a 50-row page
+- task list p95 under 200 ms on a small VM with 10,000 tasks in one project
 - sync pull p95 under 300 ms for 100 changes
 - reminder batch of 50 under 2 seconds excluding network delivery
 - webhook batch of 50 under 2 seconds excluding receiver latency
@@ -226,23 +226,24 @@ and compare. A target with no workload is a wish.
 
 ## Query budget
 
-A useful discipline is a per-request query budget:
+A useful discipline is a per-request query *shape*:
 
-| Request | Queries | Notes |
-| --- | ---: | --- |
-| `GET /health` | 0 | constant response |
-| `GET /metrics` | 4 | queue gauges |
-| `GET /app` | 4–5 | session, workspaces, projects, tasks |
-| `GET /api/.../tasks` | 2–3 | token, project, tasks |
-| `POST /tasks` | 4–6 | token, auth, project, insert, event |
-| `GET /sync` | 2 | token, changes |
+| Request | Logical stages |
+| --- | --- |
+| `GET /health` | constant response, no query |
+| `GET /metrics` | four queue gauge queries |
+| `GET /app` | session, workspaces, projects, tasks |
+| `GET /api/.../tasks` | token, project access, tasks |
+| `POST /tasks` | token, workspace/project authorization, insert, event |
+| `GET /sync` | token, membership-scoped changes |
 
-If a request exceeds the budget by a growing amount, you have an N+1 or a new
-query in a loop. The absolute number is less important than the shape: it should
-not depend on the number of rows.
+The number of stages is fixed. The number of rows is not. If the query count
+grows with the number of projects or tasks, you have an N+1.
 
-A query budget is also a review tool. A pull request that adds a query per task
-is visible in the count before it is visible in production.
+A query budget is a review tool: a pull request that adds a query per task is
+visible in the shape before it is visible in production. Count the queries with
+tracing or a test wrapper if you want exact numbers; do not copy estimates from
+a table.
 
 ## Baseline template
 

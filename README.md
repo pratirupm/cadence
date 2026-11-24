@@ -8,7 +8,7 @@ reminders, an API, a CLI sync client, email, webhooks, real-time updates, and
 production operations.
 
 Status: **complete draft** — 24 chapters, the Astro/Starlight book site, the full
-reference service, 79 Rust tests, Docker packaging, and tested SQLite backups.
+reference service, 80 Rust tests, Docker packaging, and tested SQLite backups.
 See [PLAN.md](PLAN.md) for the product plan and known scope.
 
 ## Book

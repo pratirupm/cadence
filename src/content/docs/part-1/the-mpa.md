@@ -425,9 +425,10 @@ A real test suite might parse the DOM. The string search is enough to prove the
 hidden field exists and is wired to the form. If the template changes the
 attribute order, the test fails loudly; that is acceptable for a contract test.
 
-The second test posts a wrong password to `/login` and asserts the page still
-returns `200` with “Invalid email or password.” It proves the form re-renders
-instead of redirecting or leaking a different error.
+The second test proves logout requires a valid CSRF token and clears the cookie.
+The third posts an unknown email and a wrong password to `/login` and asserts the
+page still returns `200` with “Invalid email or password.” It proves the form
+re-renders instead of redirecting or leaking a different error.
 
 The tests do not use a real browser, JavaScript, or a network socket. They are
 fast and deterministic. The manual browser check is still valuable for layout,
@@ -514,8 +515,8 @@ status after a POST because it tells the client to use GET for the next request.
 
 The session cookie is a bearer token. CSRF protects against a malicious site
 using the browser’s cookie; it does not protect against a stolen cookie. The
-`HttpOnly` and `SameSite` flags reduce the attack surface, and chapter 21 adds
-the rest.
+`HttpOnly` and `SameSite` flags reduce the attack surface; chapter 21 documents
+the remaining production controls (`Secure`, `__Host-`, HSTS, rotation).
 
 ## Exercises
 

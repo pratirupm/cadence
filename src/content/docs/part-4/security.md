@@ -346,7 +346,7 @@ Manual checks:
 $ curl -sI http://127.0.0.1:3000/health | grep -i 'content-security-policy'
 $ cargo test security
 $ cargo test --test web
-$ cargo test workspaces tasks
+$ cargo test workspaces && cargo test tasks
 $ cargo test --test api
 ```
 
@@ -358,7 +358,7 @@ in the browser console, not in a Rust test.
 ```console
 $ cargo test security
 $ cargo test --test web
-$ cargo test workspaces tasks
+$ cargo test workspaces && cargo test tasks
 $ cargo test --test api
 $ cargo test
 $ cargo fmt --check
