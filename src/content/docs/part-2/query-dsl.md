@@ -466,7 +466,7 @@ The query module has eight unit tests:
 - `rejects_unknown_fields_and_bad_values`: `owner`, `priority:high`, trailing
   `&`.
 
-The task service adds an integration test that creates two tasks, completes one,
+The task service adds a test that creates two tasks, completes one,
 and filters with `status:open`, `status:done`, `text:milk`, and an invalid field.
 That test proves the clause composes with the project scope and the task mapper.
 

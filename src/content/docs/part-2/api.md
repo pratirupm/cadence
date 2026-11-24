@@ -402,12 +402,14 @@ The idempotency service has two:
 - `rejects_reusing_a_key_for_a_different_request`: same key, different hash is
   `Conflict`.
 
-The API integration test has two:
+The API test file has three:
 
 - `token_auth_lists_and_creates_tasks_idempotently`: `/me`, create twice with the
   same key, assert identical bodies, list contains one task.
 - `rejects_missing_and_scopeless_tokens`: no bearer is 401; a read-only token
   posting a task is 403.
+- `admin_tokens_can_create_and_delete_webhooks`: create a webhook, delete it,
+  and list an empty set.
 
 Run:
 
