@@ -410,6 +410,12 @@ pub struct AppState {
     pub pool: SqlitePool,
 }
 
+impl AppState {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+}
+
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -427,14 +433,54 @@ The health handler does not need the state. `.with_state` still makes the router
 type `Router<()>`, which is what `axum::serve` expects. Handlers that need state
 will take `State<AppState>` and get a clone of the state.
 
-In `main`, connect and migrate before serving:
+Chapter 1’s `Cli` had only a command. The database path is global because every
+subcommand needs it. Add it to the struct and add `Migrate` to the enum:
 
 ```rust
-let pool = db::connect(&database).await?;
-db::migrate(&pool).await?;
-axum::serve(listener, app(AppState { pool }))
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+pub struct Cli {
+    #[arg(
+        long,
+        env = "CADENCE_DATABASE",
+        default_value = "cadence.db",
+        global = true
+    )]
+    pub database: String,
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+pub enum Command {
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:3000")]
+        bind: String,
+    },
+    Migrate,
+}
+```
+
+`global = true` lets `--database` appear before or after the subcommand. The
+dispatch matches on the command:
+
+```rust
+let Cli { database, command } = Cli::parse();
+
+match command {
+    Command::Serve { bind } => {
+        let config = Config::new(&bind)?;
+        let pool = db::connect(&database).await?;
+        db::migrate(&pool).await?;
+
+        let listener = tokio::net::TcpListener::bind(config.bind).await?;
+        axum::serve(listener, app(AppState::new(pool)))
+            .with_graceful_shutdown(shutdown_signal())
+            .await?;
+    }
+    Command::Migrate => {
+        let pool = db::connect(&database).await?;
+        db::migrate(&pool).await?;
+        tracing::info!(database = %database, "migrations applied");
+    }
+}
 ```
 
 The `serve` command now accepts `--database`; the `migrate` command applies the
@@ -446,7 +492,17 @@ $ cargo run -- serve
 ```
 
 At this checkpoint the health test builds an `AppState` with an in-memory pool.
-It does not query the database, but the router type needs a state value.
+It does not query the database, but the router type needs a state value. The
+setup changes from `app()` to:
+
+```rust
+let pool = db::connect("sqlite::memory:").await.unwrap();
+db::migrate(&pool).await.unwrap();
+let response = app(AppState::new(pool))
+    .oneshot(request)
+    .await
+    .unwrap();
+```
 
 ## Checkpoint
 
@@ -461,6 +517,12 @@ $ curl http://127.0.0.1:3000/health
 The task tests prove the persistence contract. The health test still proves the
 router. The manual run proves that the binary opens the database and applies the
 migration before it accepts requests.
+
+Commit the checkpoint:
+
+```text
+Store tasks in SQLite with migrations
+```
 
 ## Failure modes you will meet
 

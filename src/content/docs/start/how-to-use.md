@@ -16,7 +16,9 @@ Every chapter follows the same shape:
 
 The chapters show short excerpts, not the whole repository. Keep
 `cadence-app/src/` open beside the page. When a snippet omits error handling or
-imports, the reference has the full version.
+imports, the reference has the full version. [The reference source](/start/reference/)
+names the repository, the file map, and how to compare early chapters with the
+final app.
 
 The reference implementation is the final state of the app. Early chapters show
 the checkpoint as it existed then; later chapters refactor it. If a snippet does

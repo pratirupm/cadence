@@ -181,6 +181,83 @@ exist that the service cannot read. Treat the pair as one contract.
 `as_str` method is the write side; `FromStr` is the read side. Keep both in the
 same module as the enum.
 
+## The types
+
+The service works with domain structs, not raw rows:
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct Workspace {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub owner_id: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct Project {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub visibility: String,
+    pub archived_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Member {
+    pub user_id: String,
+    pub email: String,
+    pub name: String,
+    pub role: Role,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WorkspaceError {
+    #[error("workspace or project name cannot be empty")]
+    InvalidName,
+    #[error("workspace not found")]
+    WorkspaceNotFound,
+    #[error("project not found")]
+    ProjectNotFound,
+    #[error("not a member of this workspace")]
+    NotMember,
+    #[error("you do not have permission to do that")]
+    Forbidden,
+    #[error("invalid invitation")]
+    InvalidInvitation,
+    #[error("invitation belongs to a different email address")]
+    EmailMismatch,
+    #[error("invalid role")]
+    InvalidRole,
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkspaceService {
+    pool: SqlitePool,
+}
+
+impl WorkspaceService {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+}
+```
+
+`Workspace` and `Project` derive `FromRow` because they mirror a select. `Member`
+does not: it is assembled from a join and its `role` is parsed from text. Keeping
+the row type separate (`MemberRow` with a `String` role) is what lets the service
+return a typed `Role` without teaching SQLx about the enum.
+
+The error enum is deliberately domain-shaped. `NotMember` and `Forbidden` are
+different answers: the first says “you are outside this tenant,” the second says
+“you are inside it and your role is too small.” The HTTP layer maps them to the
+same status, but logs and tests can tell them apart. Chapter 17 adds an `Audit`
+variant when the audit log arrives.
+
 ## Creating a workspace
 
 Creation is two inserts that must succeed together:
@@ -363,6 +440,45 @@ An admin can add members and admins, but cannot create another owner. Only an
 owner can assign `owner`. The rule is in the service; hiding the option in a
 template is not enough.
 
+Project membership is a second, narrower layer for private projects. Only a
+workspace manager can change it, and the target must already belong to the
+workspace:
+
+```rust
+pub async fn add_project_member(
+    &self,
+    actor_id: &str,
+    project_id: &str,
+    user_id: &str,
+    role: ProjectRole,
+) -> Result<(), WorkspaceError> {
+    let project = self.find_project(project_id).await?;
+    self.require_role(&project.workspace_id, actor_id, Role::can_manage)
+        .await?;
+    if self.role(&project.workspace_id, user_id).await?.is_none() {
+        return Err(WorkspaceError::NotMember);
+    }
+
+    sqlx::query(
+        "INSERT INTO project_members (project_id, user_id, role, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (project_id, user_id) DO UPDATE SET role = excluded.role",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .bind(role.as_str())
+    .bind(Utc::now())
+    .execute(&self.pool)
+    .await?;
+
+    Ok(())
+}
+```
+
+The workspace check comes before the project insert. A project editor who is not
+a workspace member would be an orphan: the project layer must not be a way to
+join a tenant you were never invited to.
+
 `ON CONFLICT ... DO UPDATE` makes role changes an update rather than a duplicate
 error. It also means “add member” and “change role” share a method. If the
 product needs an audit entry for role changes distinct from additions, inspect
@@ -516,6 +632,12 @@ $ cargo clippy --all-targets --all-features -- -D warnings
 
 Chapter 6 adds the workspace and project forms. The service contract is stable
 before the UI appears, which is the point.
+
+Commit the checkpoint:
+
+```text
+Add workspaces, roles, projects, and invitations
+```
 
 ## Failure modes you will meet
 

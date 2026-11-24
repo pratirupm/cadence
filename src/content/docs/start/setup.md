@@ -48,6 +48,18 @@ git version 2.x
 The book commits after each working checkpoint. A local repository is enough; no
 remote account is required.
 
+Create the repository and the files Git should ignore before writing any code:
+
+```console
+$ mkdir -p ~/code/cadence-book
+$ cd ~/code/cadence-book
+$ git init
+$ printf 'target/\ncadence.db*\n.env\n' > .gitignore
+```
+
+The package you create in chapter 1 will live inside this directory. `target/`
+matches at any depth, so the build directory is ignored wherever Cargo puts it.
+
 ## Editor
 
 Any editor works. The book uses Zed in examples, but the commands are plain

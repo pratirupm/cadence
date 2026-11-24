@@ -11,9 +11,11 @@ model and gives every mutation a version.
 The task is the first type in the book that is both a domain object and a
 collaboration object. Two people can open the same task, one can rename it while
 the other completes it, and a third can delete it from a stale tab. The service
-has to choose an answer for each race. It chooses optimistic concurrency:
-mutations carry the version the client saw, and a mismatch is a conflict, not a
-last-write-wins surprise.
+has to choose an answer for each race. It chooses optimistic concurrency: every
+write reads a version and checks it in the same statement that changes the row,
+so a write that loses a race reports a conflict instead of silently overwriting.
+Chapter 14 adds the client’s base version to the sync path, so a stale offline
+edit is rejected too.
 
 By the end of this chapter you can:
 
@@ -150,6 +152,75 @@ needs to know whether to reload or to create.
 permission check without translating every variant; `Error` keeps the chain for
 logs. Chapters 7 and 9 add `Query` and `Recurrence` variants as those modules
 arrive.
+
+## The service
+
+The service owns the pool, and every public method takes the actor first:
+
+```rust
+#[derive(Debug, Clone)]
+pub struct TaskService {
+    pool: SqlitePool,
+}
+
+impl TaskService {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    pub async fn create(
+        &self,
+        actor_id: &str,
+        workspace_id: &str,
+        project_id: &str,
+        title: &str,
+    ) -> Result<Task, TaskError> { /* ... */ }
+
+    pub async fn list_for_project(
+        &self,
+        actor_id: &str,
+        project_id: &str,
+    ) -> Result<Vec<Task>, TaskError> { /* ... */ }
+
+    pub async fn get(&self, actor_id: &str, id: &str) -> Result<Task, TaskError> { /* ... */ }
+
+    pub async fn rename(&self, actor_id: &str, id: &str, title: &str) -> Result<Task, TaskError> { /* ... */ }
+
+    pub async fn set_completed(
+        &self,
+        actor_id: &str,
+        id: &str,
+        completed: bool,
+    ) -> Result<Task, TaskError> { /* ... */ }
+
+    pub async fn delete(&self, actor_id: &str, id: &str) -> Result<(), TaskError> { /* ... */ }
+
+    async fn find(&self, id: &str) -> Result<Task, TaskError> { /* ... */ }
+    async fn require_project(&self, workspace_id: &str, project_id: &str) -> Result<(), TaskError> { /* ... */ }
+    async fn require_project_access(
+        &self,
+        actor_id: &str,
+        workspace_id: &str,
+        project_id: &str,
+    ) -> Result<(), TaskError> { /* ... */ }
+    async fn require_project_write(
+        &self,
+        actor_id: &str,
+        workspace_id: &str,
+        project_id: &str,
+    ) -> Result<(), TaskError> { /* ... */ }
+}
+```
+
+`find` is private on purpose. It returns a row before authorization, so it must
+never be the method a handler calls. Every public method either authorizes from
+the caller-supplied project IDs (create) or loads the row and then authorizes
+against the row’s own workspace and project (get, rename, complete, delete).
+That difference matters: trusting a caller-supplied workspace and project pair
+is how a task from another tenant gets edited.
+
+Methods that take an `id` do not take a workspace or project. The row already
+knows them. Trusting caller-supplied scope is how IDOR bugs happen.
 
 ## Authorization before data
 
@@ -294,6 +365,12 @@ The final `?` is the version the service read at the start of the method. If
 another request changed the row, the version no longer matches and zero rows
 update. The service returns `Conflict`.
 
+That is enough to protect the write itself. It does not detect a form loaded ten
+minutes ago, because this method never sees the version the user loaded. The
+sync API in chapter 14 carries a client-supplied `base_version` and rejects a
+stale offline edit. A browser can get the same guarantee by posting the version
+back with the form; that is a useful exercise, not part of this checkpoint.
+
 Why not lock the row for the whole request? A lock would serialize every editor
 and hold a database connection across the UI round trip. Optimistic concurrency
 lets both readers proceed and pays only when they actually collide. The cost is
@@ -399,6 +476,12 @@ There is no task form until chapter 6, and no API until chapter 13. The service
 and its tests are the checkpoint. If you want a manual read, use a small test or
 the future API; do not add a temporary handler just to see a row.
 
+Commit the checkpoint:
+
+```text
+Move tasks into workspaces with versioned mutations
+```
+
 ## Failure modes you will meet
 
 **A task is visible in the wrong workspace.** The read used the task’s project
@@ -406,9 +489,11 @@ ID but not its workspace, or the project/workspace IDs came from the caller
 independently. Compare the project’s workspace to the task’s workspace and
 authorize on the row.
 
-**`Conflict` on the first edit after loading.** The client sent an old version.
-Reload the task, show the current values, and let the user retry. Do not
-automatically overwrite; that defeats the version.
+**`Conflict` on a write that should have succeeded.** Another request changed
+the row between this method’s read and its write. Reload the task, show the
+current values, and let the user retry. Do not automatically overwrite; that
+defeats the version. A stale browser form is not caught by this check; chapter
+14’s `base_version` is the fix for that case.
 
 **A viewer gets `Forbidden` on a read.** Reads call `require_member` and
 `require_project_access`; writes call `require_project_write`. If a viewer is

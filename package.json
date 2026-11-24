@@ -3,9 +3,9 @@
   "type": "module",
   "version": "0.1.0",
   "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
-    "build": "astro build && bun scripts/prefix-links.ts",
+    "dev": "bun scripts/package-reference.ts && astro dev",
+    "start": "bun scripts/package-reference.ts && astro dev",
+    "build": "bun scripts/package-reference.ts && astro build && bun scripts/prefix-links.ts",
     "preview": "astro preview",
     "astro": "astro",
     "links": "bun scripts/check-links.ts",

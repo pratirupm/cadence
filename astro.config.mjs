@@ -61,6 +61,7 @@ export default defineConfig({
 						{ label: 'What you will build', slug: 'start/what-you-will-build' },
 						{ label: 'How to use this book', slug: 'start/how-to-use' },
 						{ label: 'Set up your workbench', slug: 'start/setup' },
+						{ label: 'The reference source', slug: 'start/reference' },
 					],
 				},
 				{

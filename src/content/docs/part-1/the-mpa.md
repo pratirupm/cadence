@@ -169,6 +169,83 @@ comparing IDs inside the template, which Askama can do but which makes the
 template depend on two values and an equality rule. Compute the flag once, in
 Rust, and let the template render it.
 
+## State and errors
+
+The router needs the four services this chapter has built:
+
+```rust
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: SqlitePool,
+    pub auth: AuthService,
+    pub workspaces: WorkspaceService,
+    pub tasks: TaskService,
+}
+
+impl AppState {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self {
+            auth: AuthService::new(pool.clone()),
+            workspaces: WorkspaceService::new(pool.clone()),
+            tasks: TaskService::new(pool.clone()),
+            pool,
+        }
+    }
+}
+```
+
+Later chapters add tokens, webhooks, the event bus, metrics, and the login
+limiter to this struct. The handlers do not change shape when they do: they
+already receive `State<AppState>`.
+
+`AppError` is the one error type the handlers return:
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum AppError {
+    #[error("not found")]
+    NotFound,
+    #[error("authentication required")]
+    Unauthorized,
+    #[error("forbidden")]
+    Forbidden,
+    #[error("internal error")]
+    Internal,
+    #[error(transparent)]
+    Auth(#[from] AuthError),
+    #[error(transparent)]
+    Workspace(#[from] WorkspaceError),
+    #[error(transparent)]
+    Task(#[from] TaskError),
+}
+
+impl axum::response::IntoResponse for AppError {
+    fn into_response(self) -> axum::response::Response {
+        if matches!(self, Self::Unauthorized) {
+            return axum::response::Redirect::to("/login").into_response();
+        }
+
+        let (status, message) = match &self {
+            Self::NotFound => (StatusCode::NOT_FOUND, "not found"),
+            Self::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
+            Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
+            Self::Unauthorized => unreachable!(),
+            Self::Auth(_) => (StatusCode::BAD_REQUEST, "account error"),
+            Self::Workspace(_) => (StatusCode::FORBIDDEN, "workspace error"),
+            Self::Task(_) => (StatusCode::BAD_REQUEST, "task error"),
+        };
+
+        (status, Json(serde_json::json!({ "error": message }))).into_response()
+    }
+}
+```
+
+The redirect is the browser-specific part. A fetch or API client should get a
+`401` JSON response instead, which is why chapter 13 uses a separate extractor
+and error path for the API. One error type can still have more than one
+representation; it cannot have more than one `IntoResponse` impl, so the API
+decides before it constructs `AppError::Unauthorized`.
+
 ## Sessions in a cookie
 
 Login and signup return a session token. The browser needs to send it back. The
@@ -469,6 +546,24 @@ again. Both runs should work.
 
 The checkpoint is not “the page looks good.” It is “the browser can complete the
 same contract as the service tests, with the cookie and CSRF token.”
+
+The chapter shows the template shape and the handlers that carry the contract.
+The complete views are `templates/base.html`, `landing.html`, `signup.html`,
+`login.html`, and `app.html`; the full browser tests are the three tests in
+`cadence-app/tests/web.rs`:
+
+- `signup_login_and_task_flow`
+- `logout_requires_csrf_and_clears_the_session`
+- `login_rejects_a_bad_password`
+
+Copying the templates is expected here; they are markup, not a hidden lesson.
+Read them as you copy, and compare them with the accessibility checklist above.
+
+Commit the checkpoint:
+
+```text
+Add the server-rendered browser app
+```
 
 ## Failure modes you will meet
 

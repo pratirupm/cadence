@@ -6,6 +6,7 @@
 /dist
 /.astro
 /node_modules
+/public/reference/
 /.playwright-mcp
 
 # Local databases and data

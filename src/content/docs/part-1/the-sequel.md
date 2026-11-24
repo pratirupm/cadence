@@ -405,6 +405,49 @@ know what a flag is. Each type stays at its own level.
 is the safe default: the service is not reachable from another machine until you
 choose a public address.
 
+Add the CLI tests to the bottom of the same file. They parse arguments without
+starting a process or opening a socket:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn serve_defaults_to_loopback() {
+        let cli = Cli::try_parse_from(["cadence", "serve"]).unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Serve {
+                bind: "127.0.0.1:3000".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn serve_accepts_a_custom_address() {
+        let cli = Cli::try_parse_from(["cadence", "serve", "--bind", "0.0.0.0:8080"]).unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Serve {
+                bind: "0.0.0.0:8080".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_an_unknown_subcommand() {
+        assert!(Cli::try_parse_from(["cadence", "nope"]).is_err());
+    }
+}
+```
+
+The tests own the part `clap` cannot know: which default this service wants and
+which subcommands it promises. They do not test that `clap` parses strings.
+
 Create `src/telemetry.rs`:
 
 ```rust

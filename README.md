@@ -7,9 +7,10 @@ app and turns it into a real service: accounts, workspaces, sharing, recurrence,
 reminders, an API, a CLI sync client, email, webhooks, real-time updates, and
 production operations.
 
-Status: **complete draft** — 24 chapters, the Astro/Starlight book site, the full
+Status: **complete** — 24 chapters, the Astro/Starlight book site, the full
 reference service, 80 Rust tests, Docker packaging, and tested SQLite backups.
-See [PLAN.md](PLAN.md) for the product plan and known scope.
+The manuscript and site checks are green. See [PLAN.md](PLAN.md) for the product
+plan and known production gaps.
 
 ## Book
 
@@ -22,7 +23,8 @@ $ bun run links
 ```
 
 The chapters live in `src/content/docs/`. The site uses Astro Starlight, 0xProto,
-terminal syntax highlighting, and no reader-facing reference app.
+terminal syntax highlighting, and a reference-source page that points at
+`cadence-app/` rather than printing the app inline.
 
 ## App
 
@@ -72,5 +74,6 @@ $ cargo run -- backup --database cadence.db --output cadence-backup.db
 
 ## Next step
 
-Editorial and clean-room verification of the final manuscript, then publish the
-site.
+Publish the site. The repository has no Git remote yet, so the GitHub Pages
+workflow has not run. The remaining known gaps are production concerns, not
+manuscript work; they are listed in the deployment chapter and in `PLAN.md`.

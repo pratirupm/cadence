@@ -269,6 +269,56 @@ The HTTP layer maps these to status codes in `error.rs`. The service does not
 know what a 401 is. That separation lets the CLI reuse the same service without
 inventing HTTP responses.
 
+The service itself owns only the pool. The token kind is a private enum, and the
+stored session row is a private type:
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TokenKind {
+    Verify,
+    Reset,
+}
+
+impl TokenKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Verify => "verify",
+            Self::Reset => "reset",
+        }
+    }
+
+    fn ttl(self) -> Duration {
+        match self {
+            Self::Verify => Duration::hours(24),
+            Self::Reset => Duration::hours(1),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthService {
+    pool: SqlitePool,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct SessionRecord {
+    user_id: String,
+    csrf_token: String,
+}
+
+impl AuthService {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+}
+```
+
+The public methods are `create_user`, `find_by_email`, `signup`, `login`,
+`authenticate`, `logout`, `verify_email`, `request_password_reset`, and
+`reset_password`. The private helpers are `create_session`, `issue_token`, and
+`consume_token`. Keeping the token kind private means a caller cannot ask for a
+third kind by passing a string.
+
 ## Creating a user
 
 `create_user` normalizes the input, validates the password, hashes it, and
@@ -535,10 +585,13 @@ second waits, then sees no row. On SQLite the writer lock provides the same
 guarantee in practice; the explicit transaction makes the intent portable.
 
 `verify_email` consumes a verify token and sets `email_verified_at`.
-`reset_password` consumes a reset token, validates the new password, updates the
-hash, and deletes every session for the user in one transaction:
+`reset_password` consumes a reset token, then updates the hash and deletes every
+session for the user in a second transaction:
 
 ```rust
+let user_id = self.consume_token(token, TokenKind::Reset).await?;
+let password_hash = hash_password(password)?;
+
 let mut transaction = self.pool.begin().await?;
 sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
     // ...
@@ -546,6 +599,13 @@ sqlx::query("DELETE FROM sessions WHERE user_id = ?")
     // ...
 transaction.commit().await?;
 ```
+
+The two transactions are deliberate. `consume_token` commits the token’s
+single-use state before the password update starts, so a crash between them
+leaves a spent token and an unchanged password—annoying, but safe, and the user
+requests another link. If you inlined the consumption into the second
+transaction, one transaction would cover both, at the cost of duplicating the
+lookup. Either policy is defensible; say which one you chose.
 
 Revoking sessions is not optional. If an attacker had a session and the user
 resets the password to recover, leaving old sessions alive defeats the reset.
@@ -573,6 +633,52 @@ The CLI connects to the database, migrates, builds `AuthService`, and calls
 `CADENCE_PASSWORD`; the flag is visible in shell history, so production use
 should prefer the environment variable or a prompt. The book keeps the flag for
 clarity.
+
+The subcommand is a small clap enum:
+
+```rust
+#[derive(Debug, PartialEq, Eq, Subcommand)]
+pub enum UserCommand {
+    /// Create an account without email verification.
+    Create {
+        #[arg(long)]
+        email: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long, env = "CADENCE_PASSWORD", hide_env_values = true)]
+        password: String,
+        /// Mark the email address as verified.
+        #[arg(long)]
+        verified: bool,
+    },
+}
+```
+
+The match arm builds the service and prints the new ID and email:
+
+```rust
+Command::User { command } => {
+    let pool = db::connect(&database).await?;
+    db::migrate(&pool).await?;
+    let auth = AuthService::new(pool);
+
+    match command {
+        UserCommand::Create {
+            email,
+            name,
+            password,
+            verified,
+        } => {
+            let user = auth.create_user(&email, &name, &password, verified).await?;
+            println!("{} {}", user.id, user.email);
+        }
+    }
+}
+```
+
+`hide_env_values = true` keeps the password out of `--help` output when it comes
+from the environment. It does not keep the flag out of shell history; that is
+the trade-off the paragraph above names.
 
 The CLI prints the user ID and email. It never prints the password hash.
 
@@ -625,6 +731,12 @@ $ cargo test
 
 The manual command prints an ID and email. The tests prove hashing, login,
 sessions, verification, reset, and logout.
+
+Commit the checkpoint:
+
+```text
+Add accounts, sessions, and password reset
+```
 
 ## Failure modes you will meet
 
