@@ -109,6 +109,7 @@ export default defineConfig({
 						{ label: 'Book one recap', slug: 'appendix/book-one-recap' },
 						{ label: 'Architecture map', slug: 'appendix/architecture' },
 						{ label: 'Command reference', slug: 'appendix/commands' },
+						{ label: 'Glossary', slug: 'appendix/glossary' },
 						{ label: 'Where next', slug: 'appendix/where-next' },
 					],
 				},
