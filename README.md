@@ -9,7 +9,8 @@ production operations.
 
 Status: **complete** — 24 chapters, the Astro/Starlight book site, the full
 reference service, 80 Rust tests, Docker packaging, and tested SQLite backups.
-The manuscript and site checks are green. See [PLAN.md](PLAN.md) for the product
+The manuscript and site checks are green. The book is live at
+<https://pratirupm.github.io/cadence/>. See [PLAN.md](PLAN.md) for the product
 plan and known production gaps.
 
 ## Book
@@ -72,8 +73,9 @@ volume. Back up with:
 $ cargo run -- backup --database cadence.db --output cadence-backup.db
 ```
 
-## Next step
+## Deployment
 
-Publish the site. The repository has no Git remote yet, so the GitHub Pages
-workflow has not run. The remaining known gaps are production concerns, not
-manuscript work; they are listed in the deployment chapter and in `PLAN.md`.
+The book is published at <https://pratirupm.github.io/cadence/>. Pushes to
+`main` run CI and the GitHub Pages deploy workflow. The remaining known gaps are
+production concerns in the reference app, not manuscript work; they are listed
+in the deployment chapter and in `PLAN.md`.
