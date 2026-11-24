@@ -28,6 +28,10 @@ export default defineConfig({
 					attrs: { src: `${base}/console-colors.js`, defer: true },
 				},
 				{
+					tag: 'script',
+					attrs: { src: `${base}/a11y.js`, defer: true },
+				},
+				{
 					tag: 'link',
 					attrs: {
 						rel: 'preload',

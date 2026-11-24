@@ -18,7 +18,7 @@
 
 :root[data-theme='light'] {
 	--sl-color-accent-low: hsl(16, 85%, 92%);
-	--sl-color-accent: hsl(16, 80%, 46%);
+	--sl-color-accent: hsl(16, 80%, 44%);
 	--sl-color-accent-high: hsl(16, 75%, 30%);
 }
 
@@ -107,4 +107,27 @@ samp {
 	opacity: 1;
 	-webkit-mask-image: none;
 	mask-image: none;
+}
+
+/* Keep the code copy control visible when it has keyboard focus. */
+.expressive-code .copy button:focus-visible,
+.expressive-code .frame:focus-within .copy button {
+	opacity: 1 !important;
+}
+
+/* The TOC label is a label, not a heading that precedes the page title. */
+.toc-title {
+	margin: 0 0 0.5rem;
+	font-size: var(--sl-text-sm);
+	font-weight: 600;
+}
+
+/* Comfortable touch targets on narrow screens. */
+@media (max-width: 50rem) {
+	header button,
+	header a[href],
+	.expressive-code .copy button {
+		min-width: 44px;
+		min-height: 44px;
+	}
 }
