@@ -32,7 +32,7 @@ not “the service is ready.”
 Start from a clean working directory and a database file that does not exist:
 
 ```console
-$ cd cadence-app
+$ cd cadence
 $ rm -f /tmp/cadence-capstone.db
 $ cargo run -- migrate --database /tmp/cadence-capstone.db
 INFO cadence: migrations applied database=/tmp/cadence-capstone.db

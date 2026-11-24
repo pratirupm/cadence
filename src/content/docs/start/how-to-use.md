@@ -14,11 +14,11 @@ Every chapter follows the same shape:
 
 ## Read with the code open
 
-The chapters show short excerpts, not the whole repository. Keep
-`cadence-app/src/` open beside the page. When a snippet omits error handling or
-imports, the reference has the full version. [The reference source](/start/reference/)
-names the repository, the file map, and how to compare early chapters with the
-final app.
+The chapters show short excerpts, not the whole repository. Keep your package’s
+`src/` open beside the page (the reference repository calls the package
+`cadence-app/`). When a snippet omits error handling or imports, the reference
+has the full version. [The reference source](/start/reference/) names the
+archive, the file map, and how to compare early chapters with the final app.
 
 The reference implementation is the final state of the app. Early chapters show
 the checkpoint as it existed then; later chapters refactor it. If a snippet does
@@ -50,10 +50,11 @@ manual check produces the described behavior.
 
 ## Commands
 
-All Rust commands run from `cadence-app/`:
+All Rust commands run from your package directory. The chapters call it
+`cadence/`; the reference repository calls the same package `cadence-app/`.
 
 ```console
-$ cd cadence-app
+$ cd cadence
 $ cargo test
 $ cargo run -- serve
 $ cargo run -- migrate
@@ -89,7 +90,8 @@ differs from the printed one and the difference is not one the book allows
 - Hashes, timestamps, and IDs are examples.
 - `INFO`, `WARN`, and `ERROR` lines are `tracing` output.
 - Terminal blocks show commands with `$` and output without it.
-- A line with `// ...` in Rust is an elision, not code to type.
+- A line with `// ...` in Rust is an elision, not code to type. The same goes
+  for `/* ... */`.
 
 ## What not to do
 

@@ -550,7 +550,7 @@ same contract as the service tests, with the cookie and CSRF token.”
 The chapter shows the template shape and the handlers that carry the contract.
 The complete views are `templates/base.html`, `landing.html`, `signup.html`,
 `login.html`, and `app.html`; the full browser tests are the three tests in
-`cadence-app/tests/web.rs`:
+`tests/web.rs` (the reference repository keeps them under `cadence-app/`):
 
 - `signup_login_and_task_flow`
 - `logout_requires_csrf_and_clears_the_session`

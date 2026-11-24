@@ -3,7 +3,8 @@ title: Command reference
 description: Server, CLI, API, test, database, and deployment commands used in the book.
 ---
 
-All server commands run from `cadence-app/`. During development, `cargo run --`
+All server commands run from your package directory (`cadence/` in the chapters,
+`cadence-app/` in the reference repository). During development, `cargo run --`
 replaces an installed `cadence`.
 
 ## Build and test

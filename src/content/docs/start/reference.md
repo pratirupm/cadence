@@ -27,12 +27,6 @@ The chapters tell you to create a package named `cadence`; the archive directory
 is `cadence-app/` because the repository also holds the site. The layout inside
 the package is the same.
 
-```console
-$ git clone https://github.com/pratirupm/cadence.git
-$ cd cadence/cadence-app
-$ cargo test
-```
-
 The reference is **the final state of the app**, after all twenty-four chapters.
 It is not a snapshot of each checkpoint. Early chapters describe a smaller
 service; later chapters refactor it. When a snippet and the final file differ,
